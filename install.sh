@@ -35,6 +35,7 @@ python3 -m venv "$INSTALL_DIR/venv"
 echo -e "${YELLOW}[3/4] 更新程序文件...${NC}"
 cp "$SCRIPT_DIR/backend/main.py" "$INSTALL_DIR/main.py"
 cp "$SCRIPT_DIR/frontend/index.html" "$INSTALL_DIR/index.html"
+cp "$SCRIPT_DIR/frontend/public.html" "$INSTALL_DIR/public.html"
 
 if [ ! -f "$DATA_FILE" ]; then
   echo '{"api_sources": [], "subscriptions": {}, "settings": {"check_interval": 3600}}' > "$DATA_FILE"

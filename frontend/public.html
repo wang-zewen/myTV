@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StreamVault 影视</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f0f13;--s1:#18181f;--s2:#22222c;
+  --fg:#e4e4f0;--dim:#606078;--border:#1e1e2a;
+  --acc:#7c6ff7;--acc2:#a78bfa;
+  --r:10px;
+}
+body{background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;}
+
+/* ── header ── */
+.hd{position:sticky;top:0;z-index:50;background:rgba(15,15,19,.96);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:10px 16px;}
+.hd-inner{display:flex;align-items:center;gap:12px;max-width:1400px;margin:0 auto;}
+.logo{font-size:17px;font-weight:800;color:var(--acc2);white-space:nowrap;}
+.sbar{flex:1;display:flex;gap:8px;max-width:560px;}
+.sinput{flex:1;background:var(--s2);border:1px solid #2a2a3a;border-radius:8px;padding:8px 14px;color:var(--fg);font-size:14px;outline:none;transition:.15s;}
+.sinput:focus{border-color:var(--acc);}
+.sbtn{background:var(--acc);border:none;border-radius:8px;padding:8px 18px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;}
+.sbtn:hover{opacity:.85;}
+
+/* ── source tabs ── */
+.src-bar{background:var(--s1);border-bottom:1px solid var(--border);display:flex;overflow-x:auto;padding:0 16px;gap:2px;scrollbar-width:none;}
+.src-bar::-webkit-scrollbar{display:none;}
+.stab{background:none;border:none;border-bottom:2px solid transparent;padding:11px 16px;font-size:13px;font-weight:600;color:var(--dim);cursor:pointer;white-space:nowrap;transition:.15s;}
+.stab.on{color:var(--acc2);border-bottom-color:var(--acc);}
+.stab:hover:not(.on){color:var(--fg);}
+
+/* ── category bar ── */
+.cat-wrap{max-width:1400px;margin:0 auto;}
+.cat-bar{display:flex;overflow-x:auto;gap:6px;padding:12px 16px 6px;scrollbar-width:none;}
+.cat-bar::-webkit-scrollbar{display:none;}
+.ctab{background:var(--s2);border:1px solid #2a2a3a;border-radius:20px;padding:5px 14px;font-size:12px;font-weight:600;color:var(--dim);cursor:pointer;white-space:nowrap;transition:.15s;}
+.ctab.on{background:var(--acc);color:#fff;border-color:var(--acc);}
+.ctab:hover:not(.on){color:var(--fg);border-color:var(--acc2);}
+
+/* ── main ── */
+.main{max-width:1400px;margin:0 auto;padding:12px 16px 40px;}
+
+/* grid */
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));}
+@media(min-width:480px){.grid{grid-template-columns:repeat(auto-fill,minmax(155px,1fr));}}
+@media(min-width:900px){.grid{grid-template-columns:repeat(auto-fill,minmax(168px,1fr));}}
+
+.vc{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;cursor:pointer;transition:.2s;}
+.vc:hover{transform:translateY(-3px);border-color:var(--acc);box-shadow:0 8px 24px rgba(124,111,247,.18);}
+.vc-img{aspect-ratio:2/3;background:var(--s2);display:flex;align-items:center;justify-content:center;font-size:32px;color:var(--dim);position:relative;overflow:hidden;}
+.vc-img::before{content:'🎬';}
+.vc-img img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+.vc-tag{position:absolute;bottom:6px;left:6px;background:rgba(0,0,0,.78);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;}
+.vc-body{padding:8px;}
+.vc-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.vc-sub{font-size:11px;color:var(--dim);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.vc-from{font-size:10px;color:var(--acc2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+.more-wrap{text-align:center;padding:20px 0 0;}
+.more-btn{background:var(--s2);border:1px solid #2a2a3a;color:var(--dim);border-radius:var(--r);padding:9px 28px;cursor:pointer;font-size:13px;}
+.more-btn:hover{color:var(--fg);border-color:var(--acc);}
+
+.spin{text-align:center;padding:52px;color:var(--dim);font-size:14px;}
+.empty{text-align:center;padding:64px 20px;color:var(--dim);}
+.empty-icon{font-size:48px;margin-bottom:10px;}
+
+/* ── detail view ── */
+.dv{display:none;}
+.dv-back{background:none;border:none;color:var(--dim);font-size:14px;cursor:pointer;padding:10px 0;display:flex;align-items:center;gap:6px;margin-bottom:14px;}
+.dv-back:hover{color:var(--fg);}
+.player-wrap{background:#000;border-radius:var(--r);overflow:hidden;aspect-ratio:16/9;}
+.player-wrap video{width:100%;height:100%;display:block;}
+.dv-title{font-size:20px;font-weight:800;margin:14px 0 5px;}
+.dv-meta{font-size:13px;color:var(--dim);margin-bottom:16px;line-height:1.7;}
+.ep-head{font-size:12px;font-weight:700;color:var(--dim);letter-spacing:.05em;margin-bottom:8px;}
+.ep-list{display:flex;flex-wrap:wrap;gap:6px;max-height:200px;overflow-y:auto;}
+.ep{background:var(--s2);border:1px solid #2a2a3a;border-radius:6px;padding:5px 12px;font-size:12px;color:var(--dim);cursor:pointer;transition:.15s;}
+.ep.on{background:var(--acc);color:#fff;border-color:var(--acc);}
+.ep:hover:not(.on){color:var(--fg);border-color:var(--acc2);}
+
+.search-tag{font-size:11px;font-weight:700;color:var(--acc2);padding:14px 0 6px;letter-spacing:.04em;}
+</style>
+</head>
+<body>
+
+<header class="hd">
+  <div class="hd-inner">
+    <div class="logo">▶ StreamVault</div>
+    <div class="sbar">
+      <input class="sinput" id="q" placeholder="聚合搜索所有接口..." autocomplete="off">
+      <button class="sbtn" onclick="doSearch()">搜索</button>
+    </div>
+  </div>
+</header>
+
+<div class="src-bar" id="srcBar"></div>
+
+<div class="cat-wrap" id="catWrap"><div class="cat-bar" id="catBar"></div></div>
+
+<div class="main">
+  <div id="browseView">
+    <div class="grid" id="grid"></div>
+    <div class="more-wrap" id="moreWrap" style="display:none">
+      <button class="more-btn" onclick="loadMore()">加载更多</button>
+    </div>
+  </div>
+
+  <div class="dv" id="detailView">
+    <button class="dv-back" onclick="goBack()">← 返回</button>
+    <div class="player-wrap"><video id="player" controls autoplay playsinline></video></div>
+    <div class="dv-title" id="dvTitle"></div>
+    <div class="dv-meta" id="dvMeta"></div>
+    <div class="ep-head">选集</div>
+    <div class="ep-list" id="epList"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7/dist/hls.min.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+let sources=[], curSrc='', curCat=0, page=1, pageCount=1, isSearch=false;
+let vodArr=[], epArr=[], hlsInst=null;
+
+// ── init ──────────────────────────────────────────────────
+async function init(){
+  try{const r=await fetch('/api/sources');sources=(await r.json()).filter(s=>s.enabled!==false);}
+  catch(e){sources=[];}
+  renderSrcBar();
+  if(!sources.length){
+    setGrid('<div class="empty"><div class="empty-icon">📡</div><p>请先在管理界面添加采集站接口</p></div>');
+    return;
+  }
+  selectSrc(0);
+}
+
+// ── source bar ─────────────────────────────────────────────
+function renderSrcBar(){
+  $('srcBar').innerHTML=sources.map((s,i)=>
+    `<button class="stab${curSrc===s.url?' on':''}" onclick="selectSrc(${i})">${esc(s.name)}</button>`
+  ).join('');
+}
+
+async function selectSrc(idx){
+  curSrc=sources[idx].url; curCat=0; page=1; isSearch=false;
+  $('q').value='';
+  renderSrcBar();
+  showBrowse(true);
+  setGrid('<div class="spin">加载中...</div>');
+  $('catBar').innerHTML='';
+  await fetchCatalog(curSrc,0,1,true);
+}
+
+// ── catalog ────────────────────────────────────────────────
+async function fetchCatalog(srcUrl,typeId,pg,resetCats){
+  const p=new URLSearchParams({source_url:srcUrl,ac:'list',pg});
+  if(typeId) p.set('t',typeId);
+  try{
+    const r=await fetch('/api/catalog?'+p);
+    const d=await r.json();
+    pageCount=d.pagecount||1;
+    if(resetCats) renderCatBar(d.class||[]);
+    const list=d.list||[];
+    if(pg===1){vodArr=list;renderGrid(list,true,false);}
+    else{vodArr=[...vodArr,...list];renderGrid(list,false,false);}
+    $('moreWrap').style.display=page<pageCount?'block':'none';
+  }catch(e){
+    setGrid(`<div class="empty"><div class="empty-icon">⚠️</div><p>加载失败</p></div>`);
+  }
+}
+
+async function loadMore(){
+  if(page>=pageCount)return;
+  page++;
+  await fetchCatalog(curSrc,curCat,page,false);
+}
+
+// ── category bar ───────────────────────────────────────────
+function renderCatBar(cats){
+  $('catBar').innerHTML=
+    `<button class="ctab on" data-cat="0" onclick="selectCat(0)">全部</button>`+
+    cats.map(c=>`<button class="ctab" data-cat="${c.type_id}" onclick="selectCat(${c.type_id})">${esc(c.type_name)}</button>`).join('');
+}
+
+async function selectCat(typeId){
+  curCat=typeId; page=1;
+  document.querySelectorAll('.ctab').forEach(b=>b.classList.toggle('on',+b.dataset.cat===typeId));
+  setGrid('<div class="spin">加载中...</div>');
+  vodArr=[];
+  await fetchCatalog(curSrc,typeId,1,false);
+}
+
+// ── grid ───────────────────────────────────────────────────
+function renderGrid(list,replace,showSrc){
+  const offset=replace?0:vodArr.length-list.length;
+  const html=list.map((v,i)=>{
+    const idx=offset+i;
+    const tag=v.vod_remarks?`<div class="vc-tag">${esc(v.vod_remarks)}</div>`:'';
+    const img=v.vod_pic?`<img src="${esc(v.vod_pic)}" loading="lazy" onerror="this.remove()">`:'';
+    const sub=[v.vod_year,v.type_name,v.vod_area].filter(Boolean).join(' · ');
+    const from=showSrc&&v.source_name?`<div class="vc-from">${esc(v.source_name)}</div>`:'';
+    return `<div class="vc" onclick="openDetail(${idx})">
+      <div class="vc-img">${img}${tag}</div>
+      <div class="vc-body">
+        <div class="vc-name">${esc(v.vod_name)}</div>
+        <div class="vc-sub">${esc(sub)||'&nbsp;'}</div>
+        ${from}
+      </div>
+    </div>`;
+  }).join('');
+  const grid=$('grid');
+  if(replace) grid.innerHTML=html||'<div class="empty"><div class="empty-icon">📭</div><p>暂无内容</p></div>';
+  else grid.insertAdjacentHTML('beforeend',html);
+}
+
+function setGrid(html){
+  $('grid').innerHTML=html;
+  $('moreWrap').style.display='none';
+}
+
+// ── search ─────────────────────────────────────────────────
+$('q').addEventListener('keydown',e=>{ if(e.key==='Enter') doSearch(); });
+
+async function doSearch(){
+  const kw=$('q').value.trim();
+  if(!kw){ if(isSearch){isSearch=false;selectSrc(sources.findIndex(s=>s.url===curSrc));} return; }
+  isSearch=true;
+  showBrowse(false);
+  setGrid('<div class="spin">搜索中...</div>');
+  try{
+    const r=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:kw})});
+    const d=await r.json();
+    vodArr=d.results||[];
+    if(!vodArr.length){setGrid('<div class="empty"><div class="empty-icon">🔍</div><p>没有找到相关内容</p></div>');return;}
+    renderGrid(vodArr,true,true);
+  }catch(e){
+    setGrid('<div class="empty"><div class="empty-icon">⚠️</div><p>搜索失败</p></div>');
+  }
+}
+
+// ── detail ─────────────────────────────────────────────────
+async function openDetail(idx){
+  const v=vodArr[idx]; if(!v) return;
+  const srcUrl=v.source_url||curSrc;
+  $('browseView').style.display='none';
+  $('detailView').style.display='block';
+  $('catWrap').style.display='none';
+  $('dvTitle').textContent=v.vod_name;
+  $('dvMeta').textContent='加载中...';
+  $('epList').innerHTML='';
+  stopPlayer();
+  try{
+    const r=await fetch('/api/catalog?'+new URLSearchParams({source_url:srcUrl,ac:'detail',ids:v.vod_id}));
+    const d=await r.json();
+    const vod=(d.list||[])[0];
+    if(!vod){$('dvMeta').textContent='获取详情失败';return;}
+    $('dvTitle').textContent=vod.vod_name;
+    $('dvMeta').textContent=[
+      vod.vod_year, vod.type_name, vod.vod_area,
+      vod.vod_director?'导演：'+vod.vod_director:'',
+      vod.vod_actor?'主演：'+vod.vod_actor.split(',').slice(0,3).join('、'):'',
+    ].filter(Boolean).join(' · ');
+    epArr=parseEps(vod.vod_play_from||'',vod.vod_play_url||'');
+    renderEps();
+    if(epArr.length) playEp(0);
+  }catch(e){$('dvMeta').textContent='加载失败：'+e;}
+}
+
+function parseEps(fromRaw,urlRaw){
+  if(!urlRaw) return [];
+  const groups=urlRaw.split('$$$');
+  const best=groups.find(g=>/https?:\/\//i.test(g))||groups[0]||'';
+  return best.split('#').map((s,i)=>{
+    s=s.trim(); if(!s) return null;
+    const d=s.indexOf('$');
+    const name=d>=0?s.slice(0,d).trim():`P${i+1}`;
+    const url=d>=0?s.slice(d+1).trim():s;
+    return /https?:\/\//i.test(url)?{name,url}:null;
+  }).filter(Boolean);
+}
+
+function renderEps(){
+  $('epList').innerHTML=epArr.length
+    ?epArr.map((e,i)=>`<button class="ep" id="ep${i}" onclick="playEp(${i})">${esc(e.name)}</button>`).join('')
+    :'<span style="color:var(--dim);font-size:12px">暂无剧集信息</span>';
+}
+
+function playEp(idx){
+  document.querySelectorAll('.ep').forEach((b,i)=>b.classList.toggle('on',i===idx));
+  const ep=epArr[idx]; if(!ep) return;
+  const video=$('player');
+  stopPlayer();
+  if(Hls.isSupported()&&/\.m3u8/i.test(ep.url)){
+    hlsInst=new Hls({enableWorker:true});
+    hlsInst.loadSource(ep.url);
+    hlsInst.attachMedia(video);
+    hlsInst.on(Hls.Events.MANIFEST_PARSED,()=>video.play().catch(()=>{}));
+  }else{
+    video.src=ep.url;
+    video.play().catch(()=>{});
+  }
+  const btn=document.getElementById('ep'+idx);
+  if(btn) btn.scrollIntoView({block:'nearest',inline:'center'});
+}
+
+function stopPlayer(){
+  if(hlsInst){hlsInst.destroy();hlsInst=null;}
+  const v=$('player'); v.pause(); v.src='';
+}
+
+function goBack(){
+  stopPlayer();
+  $('detailView').style.display='none';
+  $('browseView').style.display='block';
+  if(!isSearch) $('catWrap').style.display='block';
+}
+
+function showBrowse(showCats){
+  $('browseView').style.display='block';
+  $('detailView').style.display='none';
+  $('catWrap').style.display=showCats?'block':'none';
+}
+
+init();
+</script>
+</body>
+</html>

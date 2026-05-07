@@ -514,6 +514,35 @@ async def serve_frontend():
     return "<h1>index.html not found</h1>"
 
 
+@app.get("/tv", response_class=HTMLResponse)
+async def serve_public():
+    for p in [Path(__file__).parent / "public.html",
+              Path(__file__).parent.parent / "frontend" / "public.html"]:
+        if p.exists():
+            return p.read_text(encoding="utf-8")
+    return "<h1>public.html not found</h1>"
+
+
+@app.get("/api/catalog")
+async def catalog(source_url: str, ac: str = "list", pg: int = 1, t: int = 0, ids: str = ""):
+    """代理采集站请求，供公开浏览页调用"""
+    base = normalize_api_url(source_url)
+    params: dict = {"ac": ac, "pg": pg}
+    if t:
+        params["t"] = t
+    if ids:
+        params["ids"] = ids
+    try:
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            resp = await client.get(base, params=params, timeout=10)
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.TimeoutException:
+        raise HTTPException(504, "上游接口超时")
+    except Exception as e:
+        raise HTTPException(502, str(e))
+
+
 # ── 接口管理 ──
 
 @app.get("/api/sources")

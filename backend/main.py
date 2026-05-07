@@ -146,13 +146,22 @@ class TaskStatus:
         self.source = source          # manual | subscribe（来源标记）
 
 
+_VIDEO_EXTS = {".mp4", ".mkv", ".ts", ".m4v", ".m2ts", ".mpeg"}
+
 def _find_output_file(output_name: str):
-    """查找下载完成后的输出文件（N_m3u8DL-RE 会自动加后缀）"""
-    for ext in [".mp4", ".mkv", ".ts", ".m4v"]:
+    """查找下载完成后的输出文件。
+    N_m3u8DL-RE 可能附加语言/分辨率标签（如 name.zh.mp4），
+    所以先精确匹配，再做前缀 glob，取最大的视频文件。
+    """
+    for ext in _VIDEO_EXTS:
         p = VIDEO_DIR / f"{output_name}{ext}"
         if p.exists():
             return p
-    return None
+    candidates = [
+        p for p in VIDEO_DIR.glob(f"{output_name}*")
+        if p.suffix.lower() in _VIDEO_EXTS
+    ]
+    return max(candidates, key=lambda p: p.stat().st_size) if candidates else None
 
 
 def _verify_file(path: Path) -> tuple:
@@ -228,6 +237,7 @@ async def _run_download_core(task_id: str, url: str, output_name: str):
                     "--download-retry-count", "5",
                     "--log-level", "INFO",
                     "--no-date-info",
+                    "--auto-select",
                     "--disable-update-check",
                 ]
             elif Path(ytdlp).exists():

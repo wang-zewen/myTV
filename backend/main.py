@@ -234,7 +234,9 @@ async def _run_download_core(task_id: str, url: str, output_name: str):
                     "--save-name", output_name,
                     "--tmp-dir", str(tmp_path),
                     "--thread-count", "4",
-                    "--retry-count", "5",
+                    "--download-retry-count", "5",
+                    "--log-level", "INFO",
+                    "--no-date-info",
                     "--disable-update-check",
                 ]
             elif ffmpeg:

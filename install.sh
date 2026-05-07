@@ -30,20 +30,10 @@ command -v ffmpeg  &>/dev/null || MISSING_PKGS+=("ffmpeg")
 python3 -m venv --help &>/dev/null 2>&1 || MISSING_PKGS+=("python3-venv")
 
 if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
-  echo -e "${YELLOW}  缺少依赖：${MISSING_PKGS[*]}${NC}"
-  if command -v apt-get &>/dev/null; then
-    # 尝试无密码 sudo（CI/cloud-init 环境常见）
-    if sudo -n apt-get install -y python3 python3-pip python3-venv ffmpeg -q 2>/dev/null; then
-      echo -e "  ${GREEN}依赖安装成功${NC}"
-    else
-      echo -e "${RED}  自动安装失败，请先手动执行：${NC}"
-      echo -e "  ${YELLOW}sudo apt-get install -y python3 python3-pip python3-venv ffmpeg${NC}"
-      exit 1
-    fi
-  else
-    echo -e "${RED}  请手动安装以上依赖后重试${NC}"
-    exit 1
-  fi
+  echo -e "${RED}  缺少依赖：${MISSING_PKGS[*]}${NC}"
+  echo -e "${YELLOW}  请先手动安装后重试：${NC}"
+  echo -e "  ${YELLOW}sudo apt-get install -y python3 python3-pip python3-venv ffmpeg${NC}"
+  exit 1
 else
   echo -e "  ${GREEN}依赖检查通过${NC}"
 fi

@@ -212,11 +212,20 @@ async def _run_download_core(task_id: str, url: str, output_name: str):
             await asyncio.sleep(3)  # 重试前稍等
 
         try:
-            nm3u8 = shutil.which("N_m3u8DL-RE")
             ytdlp = shutil.which("yt-dlp") or str(_BASE_DIR / "venv/bin/yt-dlp")
+            nm3u8 = shutil.which("N_m3u8DL-RE")
             ffmpeg = shutil.which("ffmpeg")
 
-            if nm3u8:
+            if Path(ytdlp).exists():
+                out_path = VIDEO_DIR / f"{output_name}.mp4"
+                cmd = [
+                    ytdlp, url,
+                    "--hls-prefer-native",
+                    "--no-part",
+                    "-o", str(out_path),
+                    "--newline",
+                ]
+            elif nm3u8:
                 tmp_path = TMP_DIR / output_name
                 tmp_path.mkdir(parents=True, exist_ok=True)
                 cmd = [
@@ -227,15 +236,6 @@ async def _run_download_core(task_id: str, url: str, output_name: str):
                     "--thread-count", "4",
                     "--retry-count", "5",
                     "--disable-update-check",
-                ]
-            elif Path(ytdlp).exists() or shutil.which("yt-dlp"):
-                out_path = VIDEO_DIR / f"{output_name}.mp4"
-                cmd = [
-                    ytdlp, url,
-                    "--hls-prefer-native",   # 内置 HLS 下载器，不需要 ffmpeg
-                    "--no-part",
-                    "-o", str(out_path),
-                    "--newline",             # 每行输出进度，便于解析
                 ]
             elif ffmpeg:
                 out_path = VIDEO_DIR / f"{output_name}.mp4"

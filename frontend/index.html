@@ -617,6 +617,7 @@ async function downloadAllEpisodes(btn){
 }
 const pollingSet=new Set();
 let allTasks={};
+const _logRendered={};
 
 async function downloadEpisode(url,name){await startDownload(url,name);nav('tasks');}
 document.getElementById('manualDownloadBtn').addEventListener('click',async()=>{
@@ -635,6 +636,39 @@ async function startDownload(url,name){
   allTasks[data.task_id]={task_id:data.task_id,name:data.name,status:'downloading',progress:0,error:'',log:[],source:'manual',retries:0};
   renderTasks();pollTask(data.task_id);updateTaskBadge();
 }
+function patchTask(t){
+  const card=document.getElementById('task-'+t.task_id);
+  if(!card){renderTasks();return;}
+  const fill=document.getElementById('prog-'+t.task_id);
+  if(fill){fill.style.width=(t.progress||0)+'%';fill.className='progress-fill '+t.status;}
+  const pct=document.getElementById('pct-'+t.task_id);
+  if(pct) pct.textContent=Math.round(t.progress||0)+'%';
+  const dot=document.getElementById('dot-'+t.task_id);
+  if(dot) dot.className='status-dot '+t.status;
+  const statusText={done:'✓ 下载完成',error:'✗ 下载失败',cancelled:'⊘ 已取消',paused:'⏸ 已暂停',queued:'⏳ 排队等待'};
+  const meta=document.getElementById('meta-'+t.task_id);
+  if(meta) meta.textContent=(statusText[t.status]||(t.retries>0?`🔄 重试中（第${t.retries}次）`:'⬇ 下载中...'))+(t.created_at?' · '+new Date(t.created_at).toLocaleTimeString():'');
+  // 只追加新日志行，不替换整个 div
+  let logEl=document.getElementById('log-'+t.task_id);
+  if(t.log&&t.log.length){
+    if(!logEl){
+      logEl=document.createElement('div');
+      logEl.className='task-log';logEl.id='log-'+t.task_id;
+      card.appendChild(logEl);_logRendered[t.task_id]=0;
+    }
+    const already=_logRendered[t.task_id]||0;
+    const newLines=t.log.slice(already);
+    if(newLines.length){
+      const atBottom=logEl.scrollHeight-logEl.scrollTop<=logEl.clientHeight+4;
+      newLines.forEach((l,i)=>{
+        if(already+i>0) logEl.appendChild(document.createElement('br'));
+        logEl.appendChild(document.createTextNode(l));
+      });
+      _logRendered[t.task_id]=t.log.length;
+      if(atBottom) logEl.scrollTop=logEl.scrollHeight;
+    }
+  }
+}
 async function pollTask(taskId){
   if(pollingSet.has(taskId))return;
   pollingSet.add(taskId);
@@ -642,13 +676,15 @@ async function pollTask(taskId){
     try{
       const r=await fetch(`/api/task/${taskId}`);
       const t=await r.json();
-      allTasks[taskId]=t;renderTasks();updateTaskBadge();
+      allTasks[taskId]=t;
       if(t.status==='done'||t.status==='error'||t.status==='cancelled'){
         pollingSet.delete(taskId);
+        renderTasks();updateTaskBadge();
         if(t.status==='done') toast(`✓ 下载完成：${t.name}`);
         else if(t.status==='error') toast(`下载失败：${t.error}`,'error');
         break;
       }
+      patchTask(t);updateTaskBadge();
     }catch(e){}
     await sleep(1500);
   }
@@ -663,16 +699,18 @@ function renderTasks(){
   const list=Object.values(allTasks).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   if(!list.length){el.innerHTML='<div class="empty"><div class="empty-icon">📭</div><p>还没有下载任务</p></div>';return;}
   const statusText={done:'✓ 下载完成',error:'✗ 下载失败',cancelled:'⊘ 已取消',paused:'⏸ 已暂停',queued:'⏳ 排队等待'};
-  el.innerHTML=list.map(t=>`
-    <div class="task-item">
+  el.innerHTML=list.map(t=>{
+    _logRendered[t.task_id]=(t.log||[]).length;
+    return `
+    <div class="task-item" id="task-${t.task_id}">
       <div class="task-header">
-        <div class="status-dot ${t.status}"></div>
+        <div class="status-dot ${t.status}" id="dot-${t.task_id}"></div>
         <div class="task-name">${esc(t.name)}${t.source==='subscribe'?'<span class="badge badge-sub" style="margin-left:6px">追剧</span>':''}</div>
-        <span class="task-pct">${Math.round(t.progress||0)}%</span>
+        <span class="task-pct" id="pct-${t.task_id}">${Math.round(t.progress||0)}%</span>
       </div>
-      <div class="progress-bar"><div class="progress-fill ${t.status}" style="width:${t.progress||0}%"></div></div>
+      <div class="progress-bar"><div class="progress-fill ${t.status}" id="prog-${t.task_id}" style="width:${t.progress||0}%"></div></div>
       <div class="task-footer">
-        <div class="task-meta">
+        <div class="task-meta" id="meta-${t.task_id}">
           ${statusText[t.status]||(t.retries>0?`🔄 重试中（第${t.retries}次）`:'⬇ 下载中...')}
           ${t.created_at?' · '+new Date(t.created_at).toLocaleTimeString():''}
         </div>
@@ -684,8 +722,8 @@ function renderTasks(){
         </div>
       </div>
       ${t.error?`<div class="error-msg">${esc(t.error)}</div>`:''}
-      ${t.log&&t.log.length?`<div class="task-log">${t.log.map(l=>esc(l)).join('<br>')}</div>`:''}
-    </div>`).join('');
+      ${t.log&&t.log.length?`<div class="task-log" id="log-${t.task_id}">${t.log.map(l=>esc(l)).join('<br>')}</div>`:''}
+    </div>`;}).join('');
 
   document.getElementById('tasksList').onclick=async e=>{
     const btn=e.target.closest('[data-action]');

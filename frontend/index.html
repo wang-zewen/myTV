@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StreamVault</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.7/hls.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap');
+:root {
+  --bg:#08080e;--s1:#0f0f18;--s2:#161622;--s3:#1e1e2e;
+  --border:#2a2a3e;--border2:#363650;
+  --accent:#818cf8;--accent2:#f472b6;
+  --green:#34d399;--yellow:#fbbf24;--red:#f87171;--orange:#fb923c;
+  --text:#e2e2f0;--muted:#64647a;--r:10px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;}
+.layout{display:grid;grid-template-columns:220px 1fr;min-height:100vh;}
+
+/* Sidebar */
+.sidebar{background:var(--s1);border-right:1px solid var(--border);padding:24px 0;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;}
+.brand{padding:0 20px 24px;border-bottom:1px solid var(--border);margin-bottom:16px;}
+.brand h1{font-size:18px;font-weight:800;letter-spacing:-0.5px;}
+.brand h1 span{color:var(--accent);}
+.brand p{font-size:11px;color:var(--muted);margin-top:2px;font-family:'DM Mono',monospace;}
+nav a{display:flex;align-items:center;gap:10px;padding:10px 20px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;border-left:2px solid transparent;transition:all .15s;}
+nav a:hover{color:var(--text);background:var(--s2);}
+nav a.active{color:var(--accent);border-left-color:var(--accent);background:rgba(129,140,248,.08);}
+nav a .icon{font-size:16px;width:20px;text-align:center;}
+.badge-pill{background:var(--accent);color:white;border-radius:999px;padding:1px 7px;font-size:11px;margin-left:auto;}
+.sidebar-footer{margin-top:auto;padding:16px 20px;border-top:1px solid var(--border);}
+.sidebar-footer p{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;}
+
+/* Main */
+.main{padding:32px 36px;overflow-y:auto;}
+.page{display:none;}.page.active{display:block;}
+.page-title{font-size:22px;font-weight:800;letter-spacing:-.5px;margin-bottom:6px;}
+.page-sub{font-size:13px;color:var(--muted);margin-bottom:28px;}
+
+/* Cards */
+.card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:22px;margin-bottom:16px;}
+
+/* Forms */
+.form-row{display:flex;gap:10px;margin-bottom:14px;align-items:flex-end;}
+.form-group{display:flex;flex-direction:column;gap:6px;flex:1;}
+input,select{background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:10px 14px;color:var(--text);font-family:'DM Mono',monospace;font-size:13px;outline:none;transition:border-color .2s;width:100%;}
+input:focus,select:focus{border-color:var(--accent);}
+input::placeholder{color:var(--muted);}
+.slabel{font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+
+/* Buttons */
+.btn{padding:10px 20px;border-radius:7px;border:none;cursor:pointer;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;transition:all .15s;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;}
+.btn-primary{background:linear-gradient(135deg,var(--accent),#a78bfa);color:white;}
+.btn-primary:hover{filter:brightness(1.15);}
+.btn-primary:disabled{opacity:.45;cursor:not-allowed;filter:none;}
+.btn-ghost{background:var(--s2);border:1px solid var(--border);color:var(--text);}
+.btn-ghost:hover{border-color:var(--border2);}
+.btn-danger{background:transparent;border:1px solid var(--border);color:var(--red);padding:7px 12px;font-size:12px;}
+.btn-danger:hover{background:rgba(248,113,113,.1);border-color:var(--red);}
+.btn-orange{background:transparent;border:1px solid var(--border);color:var(--orange);padding:7px 12px;font-size:12px;}
+.btn-orange:hover{background:rgba(251,146,60,.1);border-color:var(--orange);}
+.btn-green{background:transparent;border:1px solid var(--border);color:var(--green);padding:7px 12px;font-size:12px;}
+.btn-green:hover{background:rgba(52,211,153,.1);border-color:var(--green);}
+.btn-yellow{background:transparent;border:1px solid var(--border);color:var(--yellow);padding:7px 12px;font-size:12px;}
+.btn-yellow:hover{background:rgba(251,191,36,.1);border-color:var(--yellow);}
+.btn-sm{padding:6px 12px;font-size:12px;}
+
+/* Sources */
+.source-item{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--s2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px;}
+.source-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.source-info{flex:1;min-width:0;}
+.source-name{font-weight:700;font-size:13px;}
+.source-url{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;}
+
+/* Search */
+.search-bar{display:flex;gap:10px;margin-bottom:20px;}
+.search-bar input{font-size:15px;padding:12px 18px;}
+.result-card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:18px;margin-bottom:12px;display:grid;grid-template-columns:90px 1fr;gap:16px;animation:fadeIn .25s ease;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+.result-poster{width:90px;height:120px;object-fit:cover;border-radius:6px;background:var(--s3);flex-shrink:0;}
+.result-poster-ph{width:90px;height:120px;border-radius:6px;background:var(--s3);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;}
+.result-title{font-size:16px;font-weight:800;margin-bottom:6px;}
+.result-meta{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+.badge{font-family:'DM Mono',monospace;font-size:11px;padding:2px 8px;border-radius:999px;background:var(--s3);border:1px solid var(--border);color:var(--muted);}
+.badge-src{color:var(--accent);border-color:rgba(129,140,248,.3);background:rgba(129,140,248,.08);}
+.badge-sub{color:var(--accent2);border-color:rgba(244,114,182,.3);background:rgba(244,114,182,.08);}
+.result-desc{font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6;}
+.episodes-label{font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+.episodes-grid{display:flex;flex-wrap:wrap;gap:6px;max-height:110px;overflow-y:auto;}
+.ep-item{display:inline-flex;border:1px solid var(--border);border-radius:5px;overflow:hidden;}
+.ep-btn{padding:4px 8px;background:var(--s3);border:none;font-family:'DM Mono',monospace;font-size:12px;color:var(--text);cursor:pointer;transition:all .15s;}
+.ep-play{padding:4px 8px;background:rgba(129,140,248,.15);color:var(--accent);border-right:1px solid var(--border);}
+.ep-play:hover{background:rgba(129,140,248,.3);}
+.ep-name:hover{background:var(--s2);color:var(--green);}
+.btn-subscribe{padding:4px 12px;border-radius:5px;border:1px solid rgba(129,140,248,.4);background:rgba(129,140,248,.1);color:var(--accent);font-family:'Syne',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;}
+.btn-subscribe:hover{background:rgba(129,140,248,.2);}
+.btn-subscribe.subscribed{border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.1);color:var(--green);}
+
+/* Tasks */
+.task-item{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;margin-bottom:10px;animation:fadeIn .2s ease;}
+.task-header{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+.task-name{font-weight:700;font-size:14px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.task-pct{font-family:'DM Mono',monospace;font-size:12px;color:var(--accent);flex-shrink:0;}
+.status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.status-dot.downloading{background:var(--accent);animation:pulse 1.5s infinite;}
+.status-dot.paused{background:var(--yellow);animation:pulse 2s infinite;}
+.status-dot.done{background:var(--green);}
+.status-dot.error{background:var(--red);}
+.status-dot.cancelled{background:var(--orange);}
+.status-dot.queued{background:var(--muted);animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.4;transform:scale(.7);}}
+.progress-bar{background:var(--s3);border-radius:999px;height:3px;overflow:hidden;margin-bottom:8px;}
+.progress-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .4s;}
+.progress-fill.done{background:var(--green);}
+.progress-fill.error,.progress-fill.cancelled{background:var(--red);}
+.progress-fill.paused{background:var(--yellow);}
+.task-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.task-meta{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);}
+.task-actions{display:flex;gap:6px;flex-shrink:0;}
+.task-log{margin-top:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);max-height:90px;overflow-y:auto;line-height:1.6;}
+.error-msg{font-family:'DM Mono',monospace;font-size:12px;color:var(--red);margin-top:6px;}
+
+/* Videos */
+.videos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;}
+.video-card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;transition:border-color .2s,transform .15s;animation:fadeIn .2s ease;}
+.video-card:hover{border-color:var(--accent);transform:translateY(-2px);}
+.video-thumb{background:var(--s3);height:130px;display:flex;align-items:center;justify-content:center;font-size:36px;cursor:pointer;}
+.video-info{padding:14px;}
+.video-name{font-weight:700;font-size:13px;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.video-meta{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:10px;}
+.video-actions{display:flex;gap:7px;}
+
+/* Subscribe */
+.sub-card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:10px;display:flex;gap:14px;align-items:center;animation:fadeIn .2s ease;}
+.sub-poster{width:48px;height:64px;object-fit:cover;border-radius:5px;background:var(--s3);flex-shrink:0;}
+.sub-poster-ph{width:48px;height:64px;border-radius:5px;background:var(--s3);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;}
+.sub-info{flex:1;min-width:0;}
+.sub-name{font-weight:800;font-size:14px;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sub-meta{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);line-height:1.8;}
+.sub-status{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;}
+.sub-status.active{background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.3);}
+.sub-status.paused{background:rgba(251,146,60,.1);color:var(--orange);border:1px solid rgba(251,146,60,.3);}
+.sub-actions{display:flex;gap:6px;flex-shrink:0;}
+
+/* TVBox */
+.tvbox-card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:24px;margin-bottom:16px;}
+.tvbox-url-box{display:flex;gap:10px;align-items:center;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin:14px 0;}
+.tvbox-url-box code{font-family:'DM Mono',monospace;font-size:13px;color:var(--accent);flex:1;word-break:break-all;}
+.step{display:flex;gap:16px;margin-bottom:18px;align-items:flex-start;}
+.step-num{width:28px;height:28px;border-radius:50%;background:rgba(129,140,248,.15);border:1px solid rgba(129,140,248,.3);color:var(--accent);font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;}
+.step-body{flex:1;}
+.step-title{font-weight:700;font-size:14px;margin-bottom:4px;}
+.step-desc{font-size:12px;color:var(--muted);line-height:1.7;}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity .2s;}
+.modal-overlay.active{opacity:1;pointer-events:all;}
+.modal{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);width:100%;max-width:860px;overflow:hidden;transform:scale(.96);transition:transform .2s;}
+.modal-overlay.active .modal{transform:scale(1);}
+.modal-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.modal-title{font-weight:700;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.modal-close{background:var(--s3);border:1px solid var(--border);color:var(--text);width:28px;height:28px;border-radius:6px;cursor:pointer;font-size:14px;flex-shrink:0;margin-left:12px;}
+.modal-close:hover{color:var(--red);}
+.modal video{width:100%;max-height:65vh;background:#000;display:block;}
+.modal-footer{padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:center;}
+.modal-footer input{flex:1;font-size:12px;padding:8px 12px;}
+.btn-copy{background:var(--s2);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:6px;cursor:pointer;font-family:'DM Mono',monospace;font-size:12px;white-space:nowrap;}
+.btn-copy:hover{border-color:var(--accent);color:var(--accent);}
+
+/* Subscribe menu */
+.sub-menu-overlay{position:fixed;inset:0;z-index:150;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);opacity:0;pointer-events:none;transition:opacity .15s;}
+.sub-menu-overlay.active{opacity:1;pointer-events:all;}
+.sub-menu{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:24px;width:320px;}
+.sub-menu-title{font-weight:800;font-size:15px;margin-bottom:6px;}
+.sub-menu-name{font-size:13px;color:var(--accent);margin-bottom:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sub-opt{display:block;width:100%;padding:12px 16px;background:var(--s2);border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s;text-align:left;margin-bottom:8px;}
+.sub-opt:hover{border-color:var(--accent);background:rgba(129,140,248,.08);}
+.sub-opt-title{font-weight:700;font-size:13px;margin-bottom:3px;color:var(--text);}
+.sub-opt-desc{font-size:11px;color:var(--muted);}
+.sub-menu-cancel{width:100%;padding:9px;background:transparent;border:1px solid var(--border);border-radius:7px;color:var(--muted);cursor:pointer;font-family:'Syne',sans-serif;font-size:13px;font-weight:600;}
+.sub-menu-cancel:hover{color:var(--text);}
+
+/* Login */
+.login-overlay{position:fixed;inset:0;background:var(--bg);z-index:999;display:none;align-items:center;justify-content:center;}
+.login-box{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:36px;width:320px;text-align:center;}
+.login-box h2{font-size:20px;font-weight:800;margin-bottom:6px;}
+.login-box p{font-size:13px;color:var(--muted);margin-bottom:24px;}
+.login-box input{margin-bottom:12px;text-align:center;}
+.login-err{color:var(--red);font-size:12px;margin-top:8px;min-height:18px;}
+
+/* Misc */
+.empty{text-align:center;padding:60px 0;color:var(--muted);}
+.empty .empty-icon{font-size:40px;margin-bottom:10px;}
+.empty p{font-size:13px;}
+.toast{position:fixed;bottom:28px;right:28px;background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:12px 18px;font-size:13px;z-index:200;transform:translateY(60px);opacity:0;transition:all .3s ease;max-width:300px;}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast.success{border-left:3px solid var(--green);}
+.toast.error{border-left:3px solid var(--red);}
+::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+</style>
+</head>
+<body>
+
+<!-- 登录框 -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <div style="font-size:32px;margin-bottom:12px">🔒</div>
+    <h2>StreamVault</h2>
+    <p>请输入访问密码</p>
+    <input id="loginPwd" type="password" placeholder="密码"/>
+    <button class="btn btn-primary" style="width:100%" onclick="doLogin()">进入</button>
+    <div class="login-err" id="loginErr"></div>
+  </div>
+</div>
+
+<!-- 订阅选择弹窗 -->
+<div class="sub-menu-overlay" id="subMenuOverlay" onclick="if(event.target===this)closeSubMenu()">
+  <div class="sub-menu">
+    <div class="sub-menu-title">追剧订阅</div>
+    <div class="sub-menu-name" id="subMenuName"></div>
+    <button class="sub-opt" onclick="confirmSubscribe(false)">
+      <div class="sub-opt-title">⭐ 只追新集</div>
+      <div class="sub-opt-desc">记录当前进度，仅下载今后更新的集数</div>
+    </button>
+    <button class="sub-opt" onclick="confirmSubscribe(true)">
+      <div class="sub-opt-title">⬇ 补全 + 追新集</div>
+      <div class="sub-opt-desc">下载所有现有集，并持续追更后续更新</div>
+    </button>
+    <button class="sub-menu-cancel" onclick="closeSubMenu()">取消</button>
+  </div>
+</div>
+
+<!-- 播放器 Modal -->
+<div class="modal-overlay" id="playerModal" onclick="if(event.target===this)closePlayer()">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle"></div>
+      <button class="modal-close" onclick="closePlayer()">✕</button>
+    </div>
+    <video id="player" controls></video>
+    <div class="modal-footer">
+      <input id="videoUrlCopy" type="text" readonly/>
+      <button class="btn-copy" onclick="copyVideoUrl()">复制链接</button>
+      <button class="btn-copy" id="modalDownloadBtn" style="display:none;color:var(--green)" onclick="downloadCurrentStream()">⬇ 下载</button>
+    </div>
+  </div>
+</div>
+
+<div class="layout">
+<aside class="sidebar">
+  <div class="brand">
+    <h1>Stream<span>Vault</span></h1>
+    <p>影视下载管理器</p>
+  </div>
+  <nav id="mainNav">
+    <a data-page="search"><span class="icon">🔍</span>搜索影视</a>
+    <a data-page="sources"><span class="icon">🔌</span>接口管理</a>
+    <a data-page="tasks"><span class="icon">⬇</span>下载任务<span id="taskBadge" class="badge-pill" style="display:none">0</span></a>
+    <a data-page="library"><span class="icon">🎬</span>视频库</a>
+    <a data-page="subscribe"><span class="icon">⭐</span>追剧订阅<span id="subBadge" class="badge-pill" style="display:none;background:var(--green)">0</span></a>
+    <a data-page="tvbox"><span class="icon">📺</span>TVBox 订阅</a>
+    <a data-page="manual"><span class="icon">🔗</span>直接下载</a>
+    <a data-page="settings"><span class="icon">⚙</span>系统设置</a>
+  </nav>
+  <div class="sidebar-footer">
+    <p>接口：<span id="sourceCount">0</span> 个</p>
+  </div>
+</aside>
+
+<main class="main">
+
+  <div class="page" id="page-search">
+    <div class="page-title">搜索影视</div>
+    <div class="page-sub">从采集站接口搜索影片，点集数按钮播放或下载</div>
+    <div class="search-bar">
+      <input id="searchInput" type="text" placeholder="输入影片名称，如：流浪地球"/>
+      <button class="btn btn-primary" id="searchBtn">🔍 搜索</button>
+    </div>
+    <div id="searchResults"></div>
+  </div>
+
+  <div class="page" id="page-sources">
+    <div class="page-title">接口管理</div>
+    <div class="page-sub">添加苹果CMS（maccms）格式的采集站接口</div>
+    <div class="card">
+      <div class="slabel">添加新接口</div>
+      <div class="form-row">
+        <input id="srcName" type="text" placeholder="接口名称" style="max-width:160px"/>
+        <input id="srcUrl" type="text" placeholder="https://xxx.com/api.php/provide/vod/at/json/"/>
+        <button class="btn btn-primary" id="addSourceBtn">+ 添加</button>
+      </div>
+    </div>
+    <div class="slabel">已配置接口</div>
+    <div id="sourcesList"></div>
+  </div>
+
+  <div class="page" id="page-tasks">
+    <div class="page-title">下载任务</div>
+    <div class="page-sub">管理所有下载任务，支持暂停、继续、取消</div>
+    <div id="tasksList"></div>
+  </div>
+
+  <div class="page" id="page-library">
+    <div class="page-title">视频库</div>
+    <div class="page-sub">已下载到服务器的视频</div>
+    <div id="diskspaceBar" style="margin-bottom:16px;display:none">
+      <div style="display:flex;justify-content:space-between;font-family:'DM Mono',monospace;font-size:12px;color:var(--muted);margin-bottom:6px">
+        <span>磁盘空间</span><span id="diskspaceText"></span>
+      </div>
+      <div style="background:var(--s3);border-radius:999px;height:4px;overflow:hidden">
+        <div id="diskspaceFill" style="height:100%;border-radius:999px;transition:width .4s;background:var(--green)"></div>
+      </div>
+    </div>
+    <div id="videosList"></div>
+  </div>
+
+  <div class="page" id="page-subscribe">
+    <div class="page-title">追剧订阅</div>
+    <div class="page-sub">后台定期自动检查更新，发现新集立即下载</div>
+    <div class="card" style="margin-bottom:20px">
+      <div class="slabel">检查间隔</div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <select id="intervalSelect" style="width:auto;min-width:160px">
+          <option value="300">每 5 分钟</option>
+          <option value="1800">每 30 分钟</option>
+          <option value="3600" selected>每 1 小时</option>
+          <option value="10800">每 3 小时</option>
+          <option value="21600">每 6 小时</option>
+          <option value="86400">每 24 小时</option>
+        </select>
+        <span id="intervalStatus" style="font-size:12px;color:var(--muted);font-family:'DM Mono',monospace"></span>
+      </div>
+    </div>
+    <div id="subList"></div>
+  </div>
+
+  <div class="page" id="page-tvbox">
+    <div class="page-title">TVBox 订阅</div>
+    <div class="page-sub">在电视上用 TVBox 直接播放服务器上的视频</div>
+    <div class="tvbox-card">
+      <div class="slabel">订阅地址</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:4px">将以下地址填入 TVBox「配置地址」：</p>
+      <div class="tvbox-url-box">
+        <code id="tvboxUrl">加载中...</code>
+        <button class="btn-copy" onclick="copyTvboxUrl()">复制</button>
+      </div>
+      <p style="font-size:12px;color:var(--muted)">新下载视频后 TVBox 刷新即可看到，无需重新配置。</p>
+    </div>
+    <div class="tvbox-card">
+      <div class="slabel">注意事项</div>
+      <p style="font-size:13px;color:var(--muted);line-height:1.8">
+        • 电视和服务器需在<strong style="color:var(--text)">同一局域网</strong>，或服务器有公网IP<br>
+        • 视频格式建议 <strong style="color:var(--text)">MP4（H.264）</strong>，兼容性最好<br>
+        • 如无法连接，检查防火墙是否开放 <code style="font-family:'DM Mono',monospace;color:var(--accent)">8080</code> 端口
+      </p>
+    </div>
+  </div>
+
+  <div class="page" id="page-manual">
+    <div class="page-title">直接下载</div>
+    <div class="page-sub">已知 M3U8 链接时直接粘贴下载</div>
+    <div class="card">
+      <div class="form-row">
+        <div class="form-group">
+          <div class="slabel">M3U8 链接</div>
+          <input id="manualUrl" type="text" placeholder="https://example.com/video.m3u8"/>
+        </div>
+        <div class="form-group" style="max-width:220px">
+          <div class="slabel">保存名称（可选）</div>
+          <input id="manualName" type="text" placeholder="我的视频"/>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="manualDownloadBtn">⬇ 开始下载</button>
+    </div>
+  </div>
+
+  <div class="page" id="page-settings">
+    <div class="page-title">系统设置</div>
+    <div class="page-sub">密码保护等全局配置</div>
+    <div class="card">
+      <div class="slabel">访问密码</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">设置后每次打开需要输入密码。留空表示不需要密码。</p>
+      <div class="form-row">
+        <div class="form-group">
+          <div class="slabel">新密码</div>
+          <input id="newPwd" type="password" placeholder="留空则取消密码保护"/>
+        </div>
+        <div class="form-group">
+          <div class="slabel">确认密码</div>
+          <input id="confirmPwd" type="password" placeholder="再次输入"/>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="savePwdBtn">保存密码</button>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── 工具 ──────────────────────────────────────────────
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+function toast(msg,type='success'){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.className=`toast ${type} show`;
+  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3000);
+}
+
+// ── 导航 ──────────────────────────────────────────────
+function nav(page){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('#mainNav a').forEach(a=>a.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  document.querySelector(`#mainNav a[data-page="${page}"]`).classList.add('active');
+  if(page==='library') loadVideos();
+  if(page==='sources') renderSources();
+  if(page==='tasks') renderTasks();
+  if(page==='tvbox') initTvboxPage();
+  if(page==='subscribe') loadSubscriptions();
+}
+// 绑定导航点击
+document.querySelectorAll('#mainNav a').forEach(a=>{
+  a.addEventListener('click',()=>nav(a.dataset.page));
+});
+
+// ── 认证 ──────────────────────────────────────────────
+async function checkAuth(){
+  const r=await fetch('/api/auth/status');
+  const d=await r.json();
+  if(!d.need_auth||sessionStorage.getItem('sv_authed')==='1') return;
+  const overlay=document.getElementById('loginOverlay');
+  overlay.style.display='flex';
+  document.getElementById('loginPwd').focus();
+  await new Promise(resolve=>{window._loginResolve=resolve;});
+}
+async function doLogin(){
+  const pwd=document.getElementById('loginPwd').value;
+  const err=document.getElementById('loginErr');
+  err.textContent='';
+  const r=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd})});
+  if(r.ok){
+    sessionStorage.setItem('sv_authed','1');
+    document.getElementById('loginOverlay').style.display='none';
+    if(window._loginResolve){window._loginResolve();window._loginResolve=null;}
+  } else {
+    err.textContent='密码错误，请重试';
+    document.getElementById('loginPwd').value='';
+    document.getElementById('loginPwd').focus();
+  }
+}
+document.getElementById('loginPwd').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+
+// ── 接口管理 ──────────────────────────────────────────
+let sources=[];
+async function loadSources(){
+  const r=await fetch('/api/sources');sources=await r.json();
+  document.getElementById('sourceCount').textContent=sources.length;
+  renderSources();
+}
+function renderSources(){
+  const el=document.getElementById('sourcesList');
+  if(!sources.length){el.innerHTML='<div class="empty"><div class="empty-icon">🔌</div><p>还没有添加任何接口</p></div>';return;}
+  el.innerHTML=sources.map((s,i)=>`
+    <div class="source-item" id="src-row-${i}" style="${s.enabled===false?'opacity:.5':''}">
+      <div class="source-dot" style="background:${s.enabled===false?'var(--muted)':'var(--green)'}"></div>
+      <div class="source-info">
+        <div class="source-name">${esc(s.name)}${s.enabled===false?'<span style="font-size:11px;color:var(--muted);font-family:\'DM Mono\',monospace;margin-left:6px">(已禁用)</span>':''}</div>
+        <div class="source-url">${esc(s.url)}</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" data-i="${i}" data-action="test" title="测试接口是否可用">测试</button>
+      <button class="btn btn-ghost btn-sm" data-i="${i}" data-action="edit">编辑</button>
+      <button class="btn btn-${s.enabled===false?'green':'yellow'} btn-sm" data-i="${i}" data-action="toggle">${s.enabled===false?'▶ 启用':'⏸ 禁用'}</button>
+      <button class="btn btn-danger btn-sm" data-i="${i}" data-action="delete">删除</button>
+    </div>`).join('');
+  document.getElementById('sourcesList').onclick=async e=>{
+    const btn=e.target.closest('[data-action]');
+    if(!btn) return;
+    const i=parseInt(btn.dataset.i);
+    if(btn.dataset.action==='test'){
+      const s=sources[i];
+      btn.textContent='测试中...';btn.disabled=true;
+      const r=await fetch('/api/sources/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:s.name,url:s.url})});
+      const d=await r.json();
+      btn.textContent='测试';btn.disabled=false;
+      toast(d.ok?`✓ ${s.name}：${d.msg}`:`✗ ${s.name}：${d.error}`, d.ok?'success':'error');
+    } else if(btn.dataset.action==='edit'){
+      const s=sources[i];
+      const row=document.getElementById(`src-row-${i}`);
+      row.innerHTML=`
+        <div class="source-dot" style="background:${s.enabled===false?'var(--muted)':'var(--green)'}"></div>
+        <div class="source-info" style="display:flex;flex-direction:column;gap:6px;">
+          <input id="edit-name-${i}" value="${esc(s.name)}" placeholder="名称" style="padding:6px 10px;font-size:13px;">
+          <input id="edit-url-${i}" value="${esc(s.url)}" placeholder="接口地址" style="padding:6px 10px;font-size:12px;font-family:'DM Mono',monospace;">
+        </div>
+        <button class="btn btn-primary btn-sm" data-i="${i}" data-action="save">保存</button>
+        <button class="btn btn-ghost btn-sm" data-i="${i}" data-action="cancel">取消</button>`;
+    } else if(btn.dataset.action==='save'){
+      const name=document.getElementById(`edit-name-${i}`).value.trim();
+      const url=document.getElementById(`edit-url-${i}`).value.trim();
+      if(!name||!url){toast('名称和地址不能为空','error');return;}
+      const r=await fetch(`/api/sources/${i}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,url})});
+      if(r.ok){await loadSources();toast('已保存');}
+      else{const d=await r.json();toast(d.detail||'保存失败','error');}
+    } else if(btn.dataset.action==='cancel'){
+      renderSources();
+    } else if(btn.dataset.action==='toggle'){
+      const r=await fetch(`/api/sources/${i}/toggle`,{method:'PATCH'});
+      if(r.ok){const d=await r.json();await loadSources();toast(d.enabled?'接口已启用':'接口已禁用');}
+      else toast('操作失败','error');
+    } else if(btn.dataset.action==='delete'){
+      if(!confirm('确定删除该接口？')) return;
+      await fetch(`/api/sources/${i}`,{method:'DELETE'});
+      await loadSources();toast('已删除');
+    }
+  };
+}
+document.getElementById('addSourceBtn').addEventListener('click',async()=>{
+  const name=document.getElementById('srcName').value.trim();
+  const url=document.getElementById('srcUrl').value.trim();
+  if(!name||!url){toast('请填写名称和地址','error');return;}
+  const r=await fetch('/api/sources',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,url})});
+  if(r.ok){document.getElementById('srcName').value='';document.getElementById('srcUrl').value='';await loadSources();toast(`已添加：${name}`);}
+  else{const d=await r.json();toast(d.detail||'添加失败','error');}
+});
+
+// ── 搜索 ──────────────────────────────────────────────
+async function doSearch(){
+  const kw=document.getElementById('searchInput').value.trim();
+  if(!kw){toast('请输入搜索关键词','error');return;}
+  if(!sources.filter(s=>s.enabled!==false).length){toast('请先在「接口管理」添加并启用采集站','error');nav('sources');return;}
+  const btn=document.getElementById('searchBtn');
+  btn.disabled=true;btn.textContent='搜索中...';
+  document.getElementById('searchResults').innerHTML='<div class="empty"><div class="empty-icon">⏳</div><p>正在搜索...</p></div>';
+  try{
+    const r=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:kw})});
+    const data=await r.json();renderSearchResults(data.results,kw,data.errors||[]);
+  }catch(e){toast('搜索失败','error');document.getElementById('searchResults').innerHTML='';}
+  finally{btn.disabled=false;btn.innerHTML='🔍 搜索';}
+}
+document.getElementById('searchBtn').addEventListener('click',doSearch);
+document.getElementById('searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
+
+function renderSearchResults(results,kw,errors=[]){
+  const el=document.getElementById('searchResults');
+  const errHtml=errors.length?`<div style="margin-bottom:12px;padding:10px 14px;background:rgba(248,113,113,.07);border:1px solid rgba(248,113,113,.2);border-radius:8px;font-size:12px;font-family:'DM Mono',monospace;color:var(--muted)">
+    <span style="color:var(--red);font-weight:700">部分接口失败：</span>${errors.map(e=>`${esc(e.source)}（${esc(e.error)}）`).join('　')}
+  </div>`:'';
+  if(!results.length){el.innerHTML=errHtml+`<div class="empty"><div class="empty-icon">🔎</div><p>「${esc(kw)}」没有找到结果</p></div>`;return;}
+  el.innerHTML=errHtml+`<div style="margin-bottom:14px;font-size:13px;color:var(--muted)">找到 <strong style="color:var(--text)">${results.length}</strong> 个结果</div>`+
+  results.map(r=>`
+    <div class="result-card">
+      ${r.vod_pic?`<img class="result-poster" src="${esc(r.vod_pic)}" onerror="this.style.display='none'" loading="lazy"/>`:`<div class="result-poster-ph">🎬</div>`}
+      <div>
+        <div class="result-title">${esc(r.vod_name)}</div>
+        <div class="result-meta">
+          ${r.source_name?`<span class="badge badge-src">${esc(r.source_name)}</span>`:''}
+          ${r.type_name?`<span class="badge">${esc(r.type_name)}</span>`:''}
+          ${r.vod_year?`<span class="badge">${esc(r.vod_year)}</span>`:''}
+          ${r.vod_area?`<span class="badge">${esc(r.vod_area)}</span>`:''}
+          ${r.vod_remarks?`<span class="badge" style="color:var(--yellow)">${esc(r.vod_remarks)}</span>`:''}
+        </div>
+        ${r.vod_content?`<div class="result-desc">${esc(r.vod_content)}</div>`:''}
+        ${r.episodes.length?`
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;flex-wrap:wrap">
+            <div class="episodes-label" style="margin-bottom:0">选集（共 ${r.episodes.length} 集）</div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <button class="btn btn-ghost btn-sm dl-all-btn"
+                data-eps='${JSON.stringify(r.episodes.map(e=>({u:e.url,n:`${r.vod_name}_${e.name}`})))}'
+                data-vname="${esc(r.vod_name)}">⬇ 全部下载</button>
+              <button class="btn-subscribe ${r.subscribed?'subscribed':''}"
+                data-vid="${esc(r.vod_id)}" data-vname="${esc(r.vod_name)}"
+                data-src="${esc(r.source_url)}" data-srcname="${esc(r.source_name)}"
+                data-pic="${esc(r.vod_pic||'')}">
+                ${r.subscribed?'✓ 已订阅':'+ 追剧'}
+              </button>
+            </div>
+          </div>
+          <div class="episodes-grid">
+            ${r.episodes.map(ep=>`
+              <div class="ep-item">
+                <button class="ep-btn ep-play" data-url="${esc(ep.url)}" data-name="${esc(r.vod_name)} - ${esc(ep.name)}">▶</button>
+                <button class="ep-btn ep-name" data-url="${esc(ep.url)}" data-name="${esc(r.vod_name)}_${esc(ep.name)}">${esc(ep.name)}</button>
+              </div>`).join('')}
+          </div>`:`<div style="font-size:12px;color:var(--muted)">暂无可下载地址</div>`}
+      </div>
+    </div>`).join('');
+
+  // 事件委托
+  document.getElementById('searchResults').onclick=e=>{
+    const play=e.target.closest('.ep-play');
+    const dl=e.target.closest('.ep-name');
+    const sub=e.target.closest('.btn-subscribe');
+    const dlAll=e.target.closest('.dl-all-btn');
+    if(play) playM3u8(play.dataset.url, play.dataset.name);
+    else if(dl) downloadEpisode(dl.dataset.url, dl.dataset.name);
+    else if(sub) toggleSubscribe(sub);
+    else if(dlAll) downloadAllEpisodes(dlAll);
+  };
+}
+
+// ── 下载 ──────────────────────────────────────────────
+async function downloadAllEpisodes(btn){
+  const eps=JSON.parse(btn.dataset.eps);
+  const vname=btn.dataset.vname;
+  if(!confirm(`确定下载「${vname}」全部 ${eps.length} 集？`)) return;
+  btn.disabled=true;btn.textContent='提交中...';
+  let ok=0;
+  for(const ep of eps){
+    try{await startDownload(ep.u,ep.n);ok++;}catch(e){}
+  }
+  btn.disabled=false;btn.textContent='⬇ 全部下载';
+  toast(`已提交 ${ok} 个下载任务`);nav('tasks');
+}
+const pollingSet=new Set();
+let allTasks={};
+
+async function downloadEpisode(url,name){await startDownload(url,name);nav('tasks');}
+document.getElementById('manualDownloadBtn').addEventListener('click',async()=>{
+  const url=document.getElementById('manualUrl').value.trim();
+  const name=document.getElementById('manualName').value.trim();
+  if(!url){toast('请输入链接','error');return;}
+  await startDownload(url,name||undefined);
+  document.getElementById('manualUrl').value='';document.getElementById('manualName').value='';
+  nav('tasks');
+});
+async function startDownload(url,name){
+  const r=await fetch('/api/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,name:name||undefined})});
+  if(!r.ok){toast('提交失败','error');return;}
+  const data=await r.json();
+  toast(`开始下载：${data.name}`);
+  allTasks[data.task_id]={task_id:data.task_id,name:data.name,status:'downloading',progress:0,error:'',log:[],source:'manual',retries:0};
+  renderTasks();pollTask(data.task_id);updateTaskBadge();
+}
+async function pollTask(taskId){
+  if(pollingSet.has(taskId))return;
+  pollingSet.add(taskId);
+  while(true){
+    try{
+      const r=await fetch(`/api/task/${taskId}`);
+      const t=await r.json();
+      allTasks[taskId]=t;renderTasks();updateTaskBadge();
+      if(t.status==='done'||t.status==='error'||t.status==='cancelled'){
+        pollingSet.delete(taskId);
+        if(t.status==='done') toast(`✓ 下载完成：${t.name}`);
+        else if(t.status==='error') toast(`下载失败：${t.error}`,'error');
+        break;
+      }
+    }catch(e){}
+    await sleep(1500);
+  }
+}
+function updateTaskBadge(){
+  const n=Object.values(allTasks).filter(t=>t.status==='downloading'||t.status==='paused').length;
+  const b=document.getElementById('taskBadge');
+  b.style.display=n?'inline':'none';b.textContent=n;
+}
+function renderTasks(){
+  const el=document.getElementById('tasksList');
+  const list=Object.values(allTasks).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  if(!list.length){el.innerHTML='<div class="empty"><div class="empty-icon">📭</div><p>还没有下载任务</p></div>';return;}
+  const statusText={done:'✓ 下载完成',error:'✗ 下载失败',cancelled:'⊘ 已取消',paused:'⏸ 已暂停',queued:'⏳ 排队等待'};
+  el.innerHTML=list.map(t=>`
+    <div class="task-item">
+      <div class="task-header">
+        <div class="status-dot ${t.status}"></div>
+        <div class="task-name">${esc(t.name)}${t.source==='subscribe'?'<span class="badge badge-sub" style="margin-left:6px">追剧</span>':''}</div>
+        <span class="task-pct">${Math.round(t.progress||0)}%</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill ${t.status}" style="width:${t.progress||0}%"></div></div>
+      <div class="task-footer">
+        <div class="task-meta">
+          ${statusText[t.status]||(t.retries>0?`🔄 重试中（第${t.retries}次）`:'⬇ 下载中...')}
+          ${t.created_at?' · '+new Date(t.created_at).toLocaleTimeString():''}
+        </div>
+        <div class="task-actions">
+          ${t.status==='downloading'?`<button class="btn btn-ghost btn-sm" data-tid="${t.task_id}" data-action="pause">⏸ 暂停</button>`:''}
+          ${t.status==='paused'?`<button class="btn btn-green btn-sm" data-tid="${t.task_id}" data-action="resume">▶ 继续</button>`:''}
+          ${(t.status==='downloading'||t.status==='paused')?`<button class="btn btn-danger btn-sm" data-tid="${t.task_id}" data-action="cancel">⊘ 取消</button>`:''}
+          ${(t.status!=='downloading'&&t.status!=='paused')?`<button class="btn btn-ghost btn-sm" data-tid="${t.task_id}" data-action="remove">✕ 移除</button>`:''}
+        </div>
+      </div>
+      ${t.error?`<div class="error-msg">${esc(t.error)}</div>`:''}
+      ${t.log&&t.log.length?`<div class="task-log">${t.log.map(l=>esc(l)).join('<br>')}</div>`:''}
+    </div>`).join('');
+
+  document.getElementById('tasksList').onclick=async e=>{
+    const btn=e.target.closest('[data-action]');
+    if(!btn) return;
+    const tid=btn.dataset.tid;
+    const action=btn.dataset.action;
+    if(action==='pause'){
+      const r=await fetch(`/api/task/${tid}/pause`,{method:'POST'});
+      if(r.ok){allTasks[tid].status='paused';renderTasks();updateTaskBadge();toast('已暂停');}
+      else toast('暂停失败','error');
+    } else if(action==='resume'){
+      const r=await fetch(`/api/task/${tid}/resume`,{method:'POST'});
+      if(r.ok){allTasks[tid].status='downloading';pollTask(tid);renderTasks();updateTaskBadge();toast('已恢复');}
+      else toast('恢复失败','error');
+    } else if(action==='cancel'){
+      if(!confirm('确定取消？')) return;
+      const r=await fetch(`/api/task/${tid}/cancel`,{method:'POST'});
+      if(r.ok){allTasks[tid].status='cancelled';renderTasks();updateTaskBadge();toast('已取消');}
+      else toast('取消失败','error');
+    } else if(action==='remove'){
+      await fetch(`/api/tasks/${tid}`,{method:'DELETE'});
+      delete allTasks[tid];renderTasks();updateTaskBadge();
+    }
+  };
+}
+
+// ── 视频库 ──────────────────────────────────────────────
+async function loadDiskSpace(){
+  try{
+    const r=await fetch('/api/diskspace');const d=await r.json();
+    const bar=document.getElementById('diskspaceBar');
+    bar.style.display='block';
+    document.getElementById('diskspaceText').textContent=`已用 ${d.used_gb} GB / 共 ${d.total_gb} GB（剩余 ${d.free_gb} GB）`;
+    const fill=document.getElementById('diskspaceFill');
+    fill.style.width=`${d.percent}%`;
+    fill.style.background=d.percent>90?'var(--red)':d.percent>70?'var(--yellow)':'var(--green)';
+  }catch(e){}
+}
+async function loadVideos(){
+  loadDiskSpace();
+  const r=await fetch('/api/videos');const videos=await r.json();
+  const el=document.getElementById('videosList');
+  if(!videos.length){el.innerHTML='<div class="empty"><div class="empty-icon">📭</div><p>还没有下载任何视频</p></div>';return;}
+  el.innerHTML=`<div class="videos-grid">${videos.map(v=>`
+    <div class="video-card">
+      <div class="video-thumb" data-file="${esc(v.filename)}" data-name="${esc(v.name)}">▶️</div>
+      <div class="video-info">
+        <div class="video-name" title="${esc(v.name)}">${esc(v.name)}</div>
+        <div class="video-meta">${v.size_mb} MB · ${new Date(v.created_at).toLocaleDateString()}</div>
+        <div class="video-actions">
+          <button class="btn btn-green btn-sm" data-file="${esc(v.filename)}" data-name="${esc(v.name)}" data-action="play">▶ 播放</button>
+          <button class="btn btn-danger btn-sm" data-file="${esc(v.filename)}" data-name="${esc(v.name)}" data-action="delete">✕ 删除</button>
+        </div>
+      </div>
+    </div>`).join('')}</div>`;
+  document.getElementById('videosList').onclick=async e=>{
+    const btn=e.target.closest('[data-action]')||e.target.closest('.video-thumb');
+    if(!btn) return;
+    const file=btn.dataset.file;const name=btn.dataset.name;
+    if(btn.dataset.action==='delete'||(!btn.dataset.action&&false)){
+      if(btn.dataset.action==='delete'){
+        if(!confirm(`确定删除「${name}」？`)) return;
+        const r=await fetch(`/api/videos/${encodeURIComponent(file)}`,{method:'DELETE'});
+        if(r.ok){toast(`已删除：${name}`);loadVideos();}else toast('删除失败','error');
+      }
+    } else {
+      openPlayer(file,name);
+    }
+  };
+}
+
+// ── 播放器 ──────────────────────────────────────────────
+let _hls=null,_currentStreamUrl=null,_currentStreamName=null;
+function openPlayer(filename,name){_loadVideo(`/api/stream/${encodeURIComponent(filename)}`,name,false);}
+function playM3u8(url,name){_currentStreamUrl=url;_currentStreamName=name;_loadVideo(url,name,true);}
+function _loadVideo(url,name,isM3u8){
+  const video=document.getElementById('player');
+  document.getElementById('modalTitle').textContent=name;
+  document.getElementById('videoUrlCopy').value=isM3u8?url:location.origin+url;
+  document.getElementById('modalDownloadBtn').style.display=isM3u8?'inline-flex':'none';
+  document.getElementById('playerModal').classList.add('active');
+  if(_hls){_hls.destroy();_hls=null;}
+  if(isM3u8&&typeof Hls!=='undefined'&&Hls.isSupported()){
+    _hls=new Hls({enableWorker:true});
+    _hls.loadSource(url);_hls.attachMedia(video);
+    _hls.on(Hls.Events.MANIFEST_PARSED,()=>video.play().catch(()=>{}));
+    _hls.on(Hls.Events.ERROR,(e,d)=>{if(d.fatal)toast('播放失败，该源可能已失效','error');});
+  } else {video.src=url;}
+}
+function closePlayer(){
+  document.getElementById('playerModal').classList.remove('active');
+  const v=document.getElementById('player');v.pause();
+  if(_hls){_hls.destroy();_hls=null;}v.src='';
+}
+function copyVideoUrl(){navigator.clipboard.writeText(document.getElementById('videoUrlCopy').value);toast('链接已复制');}
+function downloadCurrentStream(){if(_currentStreamUrl)downloadEpisode(_currentStreamUrl,_currentStreamName);}
+
+// ── 订阅 ──────────────────────────────────────────────
+let subData=[],_subPending=null;
+async function loadSubscriptions(){
+  await loadSettings();
+  const r=await fetch('/api/subscriptions');subData=await r.json();
+  updateSubBadge();renderSubscriptions();
+}
+function updateSubBadge(){
+  const n=subData.filter(s=>s.status==='active').length;
+  const b=document.getElementById('subBadge');
+  b.style.display=n?'inline':'none';b.textContent=n;
+}
+function renderSubscriptions(){
+  const el=document.getElementById('subList');
+  if(!subData.length){el.innerHTML='<div class="empty"><div class="empty-icon">⭐</div><p>还没有订阅<br>在搜索结果中点「+ 追剧」即可添加</p></div>';return;}
+  el.innerHTML=subData.map(s=>`
+    <div class="sub-card">
+      ${s.vod_pic?`<img class="sub-poster" src="${esc(s.vod_pic)}" onerror="this.style.display='none'" loading="lazy"/>`:`<div class="sub-poster-ph">🎬</div>`}
+      <div class="sub-info">
+        <div class="sub-name">${esc(s.vod_name)}</div>
+        <div class="sub-meta">
+          <span class="sub-status ${s.status}">${s.status==='active'?'● 追更中':'⏸ 已暂停'}</span>
+          &nbsp;${esc(s.source_name)} · 已下载 ${s.downloaded_count} 集
+          ${s.last_checked?'<br>上次检查：'+new Date(s.last_checked).toLocaleString():''}
+          ${s.last_update?'<br>🆕 最近更新：'+new Date(s.last_update).toLocaleString():''}
+        </div>
+      </div>
+      <div class="sub-actions">
+        <button class="btn btn-ghost btn-sm" data-sid="${s.sub_id}" data-action="check" title="立刻检查">🔄</button>
+        ${s.status==='active'?`<button class="btn btn-orange btn-sm" data-sid="${s.sub_id}" data-action="pause">暂停</button>`:`<button class="btn btn-green btn-sm" data-sid="${s.sub_id}" data-action="resume">恢复</button>`}
+        <button class="btn btn-danger btn-sm" data-sid="${s.sub_id}" data-sname="${esc(s.vod_name)}" data-action="delete">删除</button>
+      </div>
+    </div>`).join('');
+  document.getElementById('subList').onclick=async e=>{
+    const btn=e.target.closest('[data-action]');if(!btn)return;
+    const sid=btn.dataset.sid,action=btn.dataset.action;
+    if(action==='check'){await fetch(`/api/subscriptions/${sid}/check`,{method:'POST'});toast('已触发检查');setTimeout(loadSubscriptions,3000);}
+    else if(action==='pause'){await fetch(`/api/subscriptions/${sid}/pause`,{method:'POST'});await loadSubscriptions();toast('已暂停');}
+    else if(action==='resume'){await fetch(`/api/subscriptions/${sid}/resume`,{method:'POST'});await loadSubscriptions();toast('已恢复');}
+    else if(action==='delete'){
+      if(!confirm(`确定删除「${btn.dataset.sname}」的订阅？`))return;
+      await fetch(`/api/subscriptions/${sid}`,{method:'DELETE'});await loadSubscriptions();toast('已删除');
+    }
+  };
+}
+function toggleSubscribe(btn){
+  if(btn.classList.contains('subscribed')){
+    const sub=subData.find(s=>s.vod_id===btn.dataset.vid&&s.source_url===btn.dataset.src);
+    if(sub){
+      fetch(`/api/subscriptions/${sub.sub_id}`,{method:'DELETE'}).then(()=>{
+        btn.classList.remove('subscribed');btn.textContent='+ 追剧';
+        toast(`已取消追剧：${btn.dataset.vname}`);loadSubscriptions();
+      });
+    }
+  } else {
+    _subPending={btn,vodId:btn.dataset.vid,vodName:btn.dataset.vname,sourceUrl:btn.dataset.src,sourceName:btn.dataset.srcname,vodPic:btn.dataset.pic};
+    document.getElementById('subMenuName').textContent=btn.dataset.vname;
+    document.getElementById('subMenuOverlay').classList.add('active');
+  }
+}
+function closeSubMenu(){document.getElementById('subMenuOverlay').classList.remove('active');_subPending=null;}
+async function confirmSubscribe(downloadExisting){
+  if(!_subPending)return;
+  const{btn,vodId,vodName,sourceUrl,sourceName,vodPic}=_subPending;
+  _subPending=null;closeSubMenu();
+  const r=await fetch('/api/subscriptions',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({vod_id:vodId,vod_name:vodName,source_url:sourceUrl,source_name:sourceName,vod_pic:vodPic,download_existing:downloadExisting})});
+  if(r.ok){
+    btn.classList.add('subscribed');btn.textContent='✓ 已订阅';
+    toast(downloadExisting?`已加入追剧：${vodName}，正在下载现有集数...`:`已加入追剧：${vodName}，将自动下载后续更新`);
+    await loadSubscriptions();
+  } else {const d=await r.json();toast(d.detail||'订阅失败','error');}
+}
+
+// ── 设置 ──────────────────────────────────────────────
+async function loadSettings(){
+  try{
+    const r=await fetch('/api/settings');const s=await r.json();
+    const sel=document.getElementById('intervalSelect');
+    if(sel){sel.value=String(s.check_interval||3600);updateIntervalStatus(s.check_interval);}
+  }catch(e){}
+}
+function updateIntervalStatus(seconds){
+  const el=document.getElementById('intervalStatus');if(!el)return;
+  const labels={300:'5分钟',1800:'30分钟',3600:'1小时',10800:'3小时',21600:'6小时',86400:'24小时'};
+  el.textContent=`当前：每 ${labels[seconds]||seconds+'秒'} 检查一次`;
+}
+document.getElementById('intervalSelect').addEventListener('change',async()=>{
+  const val=parseInt(document.getElementById('intervalSelect').value);
+  const r=await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({check_interval:val})});
+  if(r.ok){updateIntervalStatus(val);toast('检查间隔已保存');}
+});
+document.getElementById('savePwdBtn').addEventListener('click',async()=>{
+  const p1=document.getElementById('newPwd').value;
+  const p2=document.getElementById('confirmPwd').value;
+  if(p1!==p2){toast('两次密码不一致','error');return;}
+  const r=await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:p1})});
+  if(r.ok){
+    document.getElementById('newPwd').value='';document.getElementById('confirmPwd').value='';
+    sessionStorage.removeItem('sv_authed');
+    toast(p1?'密码已设置':'已取消密码保护');
+  } else toast('保存失败','error');
+});
+
+// ── TVBox ──────────────────────────────────────────────
+function initTvboxPage(){document.getElementById('tvboxUrl').textContent=`${location.origin}/tvbox/source`;}
+function copyTvboxUrl(){navigator.clipboard.writeText(document.getElementById('tvboxUrl').textContent);toast('订阅地址已复制');}
+
+// ── 全局轮询 ──────────────────────────────────────────
+setInterval(async()=>{
+  const active=Object.values(allTasks).filter(t=>t.status==='downloading'||t.status==='paused');
+  if(!active.length)return;
+  try{
+    await Promise.all(active.map(async t=>{
+      const r=await fetch(`/api/task/${t.task_id}`);
+      if(r.ok){const d=await r.json();allTasks[d.task_id]=d;}
+    }));
+    renderTasks();updateTaskBadge();
+  }catch(e){}
+},2000);
+
+// ── 初始化 ──────────────────────────────────────────────
+async function init(){
+  await checkAuth();
+  nav('search');
+  await loadSources();
+  await loadSettings();
+  await loadSubscriptions();
+  try{
+    const r=await fetch('/api/tasks');const list=await r.json();
+    list.forEach(t=>{
+      allTasks[t.task_id]=t;
+      if(t.status==='downloading'||t.status==='paused') pollTask(t.task_id);
+    });
+    updateTaskBadge();
+  }catch(e){}
+}
+init();
+</script>
+</body>
+</html>

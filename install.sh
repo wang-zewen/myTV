@@ -30,7 +30,7 @@ mkdir -p /tmp/m3u8dl
 
 echo -e "${YELLOW}[2/4] 安装 Python 依赖...${NC}"
 python3 -m venv "$INSTALL_DIR/venv"
-"$INSTALL_DIR/venv/bin/pip" install -q fastapi "uvicorn[standard]" python-multipart httpx
+"$INSTALL_DIR/venv/bin/pip" install -q fastapi "uvicorn[standard]" python-multipart httpx yt-dlp
 
 echo -e "${YELLOW}[3/4] 更新程序文件...${NC}"
 cp "$SCRIPT_DIR/backend/main.py" "$INSTALL_DIR/main.py"

@@ -213,6 +213,7 @@ async def _run_download_core(task_id: str, url: str, output_name: str):
 
         try:
             nm3u8 = shutil.which("N_m3u8DL-RE")
+            ytdlp = shutil.which("yt-dlp") or str(_BASE_DIR / "venv/bin/yt-dlp")
             ffmpeg = shutil.which("ffmpeg")
 
             if nm3u8:
@@ -226,20 +227,29 @@ async def _run_download_core(task_id: str, url: str, output_name: str):
                     "--tmp-dir", str(tmp_path),
                     "--no-date-info",
                     "--log-level", "INFO",
-                    "--thread-count", "4",      # 4线程并行下载分片
-                    "--retry-count", "5",       # 单个分片失败重试5次
+                    "--thread-count", "4",
+                    "--retry-count", "5",
+                ]
+            elif Path(ytdlp).exists() or shutil.which("yt-dlp"):
+                out_path = VIDEO_DIR / f"{output_name}.mp4"
+                cmd = [
+                    ytdlp, url,
+                    "--hls-prefer-native",   # 内置 HLS 下载器，不需要 ffmpeg
+                    "--no-part",
+                    "-o", str(out_path),
+                    "--newline",             # 每行输出进度，便于解析
                 ]
             elif ffmpeg:
                 out_path = VIDEO_DIR / f"{output_name}.mp4"
                 cmd = [
                     ffmpeg, "-i", url,
                     "-c", "copy",
-                    "-y",           # 覆盖已有文件（断点重来）
+                    "-y",
                     str(out_path),
                 ]
             else:
                 task.status = "error"
-                task.error = "未找到下载工具，请安装 ffmpeg 或 N_m3u8DL-RE"
+                task.error = "未找到下载工具（yt-dlp/ffmpeg/N_m3u8DL-RE）"
                 return
 
             process = await asyncio.create_subprocess_exec(

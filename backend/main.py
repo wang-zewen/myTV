@@ -231,12 +231,12 @@ async def _run_download_core(task_id: str, url: str, output_name: str):
                     "--disable-update-check",
                 ]
             elif Path(ytdlp).exists():
-                out_path = VIDEO_DIR / f"{output_name}.mp4"
+                out_template = str(VIDEO_DIR / f"{output_name}.%(ext)s")
                 cmd = [
                     ytdlp, url,
                     "--hls-prefer-native",
                     "--no-part",
-                    "-o", str(out_path),
+                    "-o", out_template,
                     "--newline",
                 ]
             elif ffmpeg:
@@ -506,21 +506,21 @@ async def startup():
 # ─── 路由 ──────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
-async def serve_frontend():
-    for p in [Path(__file__).parent / "index.html",
-              Path(__file__).parent.parent / "frontend" / "index.html"]:
-        if p.exists():
-            return p.read_text(encoding="utf-8")
-    return "<h1>index.html not found</h1>"
-
-
-@app.get("/tv", response_class=HTMLResponse)
 async def serve_public():
     for p in [Path(__file__).parent / "public.html",
               Path(__file__).parent.parent / "frontend" / "public.html"]:
         if p.exists():
             return p.read_text(encoding="utf-8")
     return "<h1>public.html not found</h1>"
+
+
+@app.get("/admin", response_class=HTMLResponse)
+async def serve_admin():
+    for p in [Path(__file__).parent / "index.html",
+              Path(__file__).parent.parent / "frontend" / "index.html"]:
+        if p.exists():
+            return p.read_text(encoding="utf-8")
+    return "<h1>index.html not found</h1>"
 
 
 @app.get("/api/catalog")

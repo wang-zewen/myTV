@@ -217,7 +217,6 @@ async def _run_download_core(task_id: str, url: str, output_name: str):
             ffmpeg = shutil.which("ffmpeg")
 
             if nm3u8:
-                # --tmp-dir 固定按 output_name 区分，重启后可续传同名任务的临时分片
                 tmp_path = TMP_DIR / output_name
                 tmp_path.mkdir(parents=True, exist_ok=True)
                 cmd = [
@@ -225,10 +224,9 @@ async def _run_download_core(task_id: str, url: str, output_name: str):
                     "--save-dir", str(VIDEO_DIR),
                     "--save-name", output_name,
                     "--tmp-dir", str(tmp_path),
-                    "--no-date-info",
-                    "--log-level", "INFO",
                     "--thread-count", "4",
                     "--retry-count", "5",
+                    "--disable-update-check",
                 ]
             elif Path(ytdlp).exists() or shutil.which("yt-dlp"):
                 out_path = VIDEO_DIR / f"{output_name}.mp4"

@@ -23,31 +23,16 @@ DATA_FILE="$INSTALL_DIR/data.json"
 PORT=8080
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo -e "${YELLOW}[1/5] 检查系统依赖...${NC}"
-MISSING_PKGS=()
-command -v python3 &>/dev/null || MISSING_PKGS+=("python3")
-command -v ffmpeg  &>/dev/null || MISSING_PKGS+=("ffmpeg")
-python3 -m venv --help &>/dev/null 2>&1 || MISSING_PKGS+=("python3-venv")
-
-if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
-  echo -e "${RED}  缺少依赖：${MISSING_PKGS[*]}${NC}"
-  echo -e "${YELLOW}  请先手动安装后重试：${NC}"
-  echo -e "  ${YELLOW}sudo apt-get install -y python3 python3-pip python3-venv ffmpeg${NC}"
-  exit 1
-else
-  echo -e "  ${GREEN}依赖检查通过${NC}"
-fi
-
-echo -e "${YELLOW}[2/5] 创建目录...${NC}"
+echo -e "${YELLOW}[1/4] 创建目录...${NC}"
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$VIDEO_DIR"
 mkdir -p /tmp/m3u8dl
 
-echo -e "${YELLOW}[3/5] 安装 Python 依赖...${NC}"
+echo -e "${YELLOW}[2/4] 安装 Python 依赖...${NC}"
 python3 -m venv "$INSTALL_DIR/venv"
 "$INSTALL_DIR/venv/bin/pip" install -q fastapi "uvicorn[standard]" python-multipart httpx
 
-echo -e "${YELLOW}[4/5] 更新程序文件...${NC}"
+echo -e "${YELLOW}[3/4] 更新程序文件...${NC}"
 cp "$SCRIPT_DIR/backend/main.py" "$INSTALL_DIR/main.py"
 cp "$SCRIPT_DIR/frontend/index.html" "$INSTALL_DIR/index.html"
 
@@ -58,7 +43,7 @@ else
   echo -e "  ${GREEN}检测到已有配置，保留 data.json（接口、订阅不丢失）${NC}"
 fi
 
-echo -e "${YELLOW}[5/5] 配置并启动服务...${NC}"
+echo -e "${YELLOW}[4/4] 配置并启动服务...${NC}"
 
 USE_SYSTEMD=false
 if command -v systemctl &>/dev/null && systemctl --user status &>/dev/null 2>&1; then

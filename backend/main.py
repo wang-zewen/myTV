@@ -68,7 +68,10 @@ def save_data():
             for sid, s in subscriptions.items()
         }
     }
-    DATA_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    try:
+        DATA_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    except Exception as e:
+        print(f"[save_data] 写入失败: {e}")
 
 
 def load_data():

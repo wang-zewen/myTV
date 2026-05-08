@@ -19,7 +19,7 @@ import secrets
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -562,6 +562,15 @@ async def serve_public():
         if p.exists():
             return p.read_text(encoding="utf-8")
     return "<h1>public.html not found</h1>"
+
+
+@app.get("/favicon.svg")
+async def serve_favicon():
+    for p in [Path(__file__).parent / "favicon.svg",
+              Path(__file__).parent.parent / "frontend" / "favicon.svg"]:
+        if p.exists():
+            return FileResponse(p, media_type="image/svg+xml")
+    return Response(status_code=404)
 
 
 @app.get("/admin", response_class=HTMLResponse)

@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>StreamVault 影视</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -21,7 +22,7 @@ button{cursor:pointer;font-family:inherit;}
 /* ── header ── */
 .hd{position:sticky;top:0;z-index:100;background:rgba(8,8,14,.9);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--border);}
 .hd-inner{display:flex;align-items:center;gap:12px;max-width:1440px;margin:0 auto;padding:11px 20px;}
-.logo{font-size:18px;font-weight:900;letter-spacing:-.4px;white-space:nowrap;background:linear-gradient(120deg,#a78bfa,#7c6fff 60%,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.logo{font-size:18px;font-weight:900;letter-spacing:-.4px;white-space:nowrap;background:linear-gradient(120deg,#a78bfa,#7c6fff 60%,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-decoration:none;display:inline-flex;align-items:baseline;}
 .logo-sub{-webkit-text-fill-color:var(--dim);font-size:12px;font-weight:400;margin-left:4px;}
 .search-wrap{flex:1;max-width:540px;display:flex;align-items:center;background:var(--s2);border:1px solid var(--border);border-radius:10px;transition:border-color .2s,box-shadow .2s;}
 .search-wrap:focus-within{border-color:rgba(124,111,255,.6);box-shadow:0 0 0 3px rgba(124,111,255,.1);}
@@ -85,6 +86,7 @@ button{cursor:pointer;font-family:inherit;}
 
 /* ── skeleton ── */
 @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+@keyframes spin{to{transform:rotate(360deg)}}
 .sk-card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
 .sk-thumb{aspect-ratio:2/3;}
 .sk-line{height:11px;border-radius:4px;margin:9px 10px 0;}
@@ -143,7 +145,7 @@ button{cursor:pointer;font-family:inherit;}
 
 <header class="hd">
   <div class="hd-inner">
-    <div class="logo">StreamVault<span class="logo-sub">影视</span></div>
+    <a class="logo" href="/">StreamVault<span class="logo-sub">影视</span></a>
     <div class="search-wrap">
       <input class="search-input" id="q" placeholder="聚合搜索所有接口..." autocomplete="off">
       <button class="search-btn" onclick="doSearch()">🔍</button>
@@ -171,6 +173,10 @@ button{cursor:pointer;font-family:inherit;}
     </div>
     <div class="player-box">
       <video id="player" controls playsinline></video>
+      <div id="playerLoading" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:rgba(0,0,0,.55);color:var(--fg2);font-size:13px;z-index:2;">
+        <div style="width:28px;height:28px;border:3px solid rgba(255,255,255,.18);border-top-color:var(--acc2);border-radius:50%;animation:spin 1s linear infinite;"></div>
+        <span id="playerLoadingText">正在加载播放...</span>
+      </div>
       <div class="player-err" id="playerErr"><span style="font-size:36px">⚠️</span><span id="playerErrMsg">播放失败</span></div>
     </div>
     <div class="dv-body">
@@ -200,6 +206,7 @@ let sources=[], curSrc='', curCat=0, page=1, pageCount=1, hasCats=false;
 let isSearch=false, isLocal=false, isEmby=false;
 let vodArr=[], epArr=[], hlsInst=null;
 let embyStatus={configured:false,need_auth:false};
+let _playerReadyBound=false;
 let embyLibraries=[], curEmbyLib='', embyPage=1, embyTotal=0;
 let curEmbyItem=null;
 
@@ -569,9 +576,29 @@ function playEp(idx){
   document.getElementById('ep'+idx)?.scrollIntoView({block:'nearest',inline:'center'});
 }
 
+function showPlayerLoading(text='正在加载播放...'){
+  $('playerLoadingText').textContent=text;
+  $('playerLoading').style.display='flex';
+}
+function hidePlayerLoading(){$('playerLoading').style.display='none';}
+function showPlayerError(msg){
+  hidePlayerLoading();
+  $('playerErrMsg').textContent=msg;
+  $('playerErr').style.display='flex';
+}
+function _bindPlayerReady(video){
+  if(_playerReadyBound)return;
+  _playerReadyBound=true;
+  ['loadeddata','canplay','playing'].forEach(ev=>video.addEventListener(ev,hidePlayerLoading));
+  video.addEventListener('waiting',()=>showPlayerLoading('缓冲中...'));
+  video.addEventListener('stalled',()=>showPlayerLoading('网络较慢，正在重试...'));
+  video.addEventListener('error',()=>showPlayerError('视频播放失败，链接可能已失效或格式不兼容'));
+}
 function startPlay(video,url){
   stopPlayer();
+  _bindPlayerReady(video);
   $('playerErr').style.display='none';
+  showPlayerLoading('正在加载播放...');
   const isM3u8=/\.m3u8/i.test(url);
   if(isM3u8&&typeof Hls!=='undefined'&&Hls.isSupported()){
     let mediaErrCount=0;
@@ -582,29 +609,31 @@ function startPlay(video,url){
     hlsInst.on(Hls.Events.ERROR,(_,d)=>{
       if(!d.fatal)return;
       if(d.type===Hls.ErrorTypes.NETWORK_ERROR){
+        showPlayerLoading('网络波动，正在重连...');
         hlsInst.startLoad();
       }else if(d.type===Hls.ErrorTypes.MEDIA_ERROR&&mediaErrCount<2){
         mediaErrCount++;
+        showPlayerLoading('正在恢复播放...');
         hlsInst.recoverMediaError();
       }else{
         const msg=d.type===Hls.ErrorTypes.NETWORK_ERROR?'网络错误，源不可用':'媒体解码失败，格式不兼容';
-        $('playerErrMsg').textContent=msg;
-        $('playerErr').style.display='flex';
+        showPlayerError(msg);
       }
     });
   }else if(isM3u8&&video.canPlayType('application/vnd.apple.mpegurl')){
-    // Safari / iOS 原生 HLS 支持
     video.src=url;
-    video.play().catch(()=>{});
+    video.play().catch(()=>showPlayerError('播放启动失败，请稍后重试'));
   }else{
     video.src=url;
-    video.play().catch(()=>{});
+    video.play().catch(()=>showPlayerError('播放启动失败，请稍后重试'));
   }
 }
 
 function stopPlayer(){
   if(hlsInst){hlsInst.destroy();hlsInst=null;}
-  const v=$('player');v.pause();v.src='';
+  hidePlayerLoading();
+  $('playerErr').style.display='none';
+  const v=$('player');v.pause();v.src='';v.load();
 }
 
 function goBack(){

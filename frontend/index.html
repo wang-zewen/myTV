@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>StreamVault</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.7/hls.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap');
@@ -17,6 +18,9 @@
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;}
 .layout{display:grid;grid-template-columns:220px 1fr;min-height:100vh;}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px;}
+.topbar-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.brand-link{text-decoration:none;color:inherit;display:block;}
 
 /* Sidebar */
 .sidebar{background:var(--s1);border-right:1px solid var(--border);padding:24px 0;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;}
@@ -78,6 +82,7 @@ input::placeholder{color:var(--muted);}
 .search-bar input{font-size:15px;padding:12px 18px;}
 .result-card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:18px;margin-bottom:12px;display:grid;grid-template-columns:90px 1fr;gap:16px;animation:fadeIn .25s ease;}
 @keyframes fadeIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+@keyframes spin{to{transform:rotate(360deg)}}
 .result-poster{width:90px;height:120px;object-fit:cover;border-radius:6px;background:var(--s3);flex-shrink:0;}
 .result-poster-ph{width:90px;height:120px;border-radius:6px;background:var(--s3);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;}
 .result-title{font-size:16px;font-weight:800;margin-bottom:6px;}
@@ -238,7 +243,14 @@ input::placeholder{color:var(--muted);}
       <div class="modal-title" id="modalTitle"></div>
       <button class="modal-close" onclick="closePlayer()">✕</button>
     </div>
-    <video id="player" controls></video>
+    <div style="position:relative;">
+      <video id="player" controls></video>
+      <div id="playerLoading" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:rgba(0,0,0,.55);color:var(--text);font-size:13px;z-index:2;">
+        <div style="width:28px;height:28px;border:3px solid rgba(255,255,255,.18);border-top-color:var(--accent2);border-radius:50%;animation:spin 1s linear infinite;"></div>
+        <span id="playerLoadingText">正在加载播放...</span>
+      </div>
+      <div id="playerInlineError" style="position:absolute;inset:auto 16px 16px 16px;display:none;background:rgba(15,15,24,.92);border:1px solid rgba(248,113,113,.3);color:var(--red);border-radius:10px;padding:10px 12px;font-size:12px;z-index:3;"></div>
+    </div>
     <div class="modal-footer">
       <input id="videoUrlCopy" type="text" readonly/>
       <button class="btn-copy" onclick="copyVideoUrl()">复制链接</button>
@@ -249,10 +261,10 @@ input::placeholder{color:var(--muted);}
 
 <div class="layout">
 <aside class="sidebar">
-  <div class="brand">
+  <a class="brand brand-link" href="/">
     <h1>Stream<span>Vault</span></h1>
     <p>影视下载管理器</p>
-  </div>
+  </a>
   <nav id="mainNav">
     <a data-page="search"><span class="icon">🔍</span>搜索影视</a>
     <a data-page="sources"><span class="icon">🔌</span>接口管理</a>
@@ -270,6 +282,16 @@ input::placeholder{color:var(--muted);}
 </aside>
 
 <main class="main">
+  <div class="topbar">
+    <div>
+      <div class="page-title" style="margin-bottom:2px">控制台</div>
+      <div class="page-sub" style="margin-bottom:0">管理下载、订阅、TVBox 和 Emby</div>
+    </div>
+    <div class="topbar-actions">
+      <a href="/" class="btn btn-ghost">← 返回主页</a>
+      <button class="btn btn-primary" onclick="nav('search')">🏠 后台首页</button>
+    </div>
+  </div>
 
   <div class="page" id="page-search">
     <div class="page-title">搜索影视</div>
@@ -872,44 +894,70 @@ async function loadVideos(){
 }
 
 // ── 播放器 ──────────────────────────────────────────────
-let _hls=null,_currentStreamUrl=null,_currentStreamName=null;
+let _hls=null,_currentStreamUrl=null,_currentStreamName=null,_adminPlayerBound=false;
 function openPlayer(filename,name){_loadVideo(`/api/stream/${encodeURIComponent(filename)}`,name,false);}
 function playM3u8(url,name){_currentStreamUrl=url;_currentStreamName=name;_loadVideo(url,name,true);}
+function _showPlayerLoading(text='正在加载播放...'){
+  document.getElementById('playerLoadingText').textContent=text;
+  document.getElementById('playerLoading').style.display='flex';
+}
+function _hidePlayerLoading(){document.getElementById('playerLoading').style.display='none';}
+function _showInlinePlayerError(msg){
+  _hidePlayerLoading();
+  const box=document.getElementById('playerInlineError');
+  box.textContent=msg;
+  box.style.display='block';
+}
+function _bindAdminPlayer(video){
+  if(_adminPlayerBound)return;
+  _adminPlayerBound=true;
+  ['loadeddata','canplay','playing'].forEach(ev=>video.addEventListener(ev,_hidePlayerLoading));
+  video.addEventListener('waiting',()=>_showPlayerLoading('缓冲中...'));
+  video.addEventListener('stalled',()=>_showPlayerLoading('网络较慢，正在重试...'));
+  video.addEventListener('error',()=>_showInlinePlayerError('视频播放失败，链接可能已失效或格式不兼容'));
+}
 function _loadVideo(url,name,isM3u8){
   const video=document.getElementById('player');
+  _bindAdminPlayer(video);
   document.getElementById('modalTitle').textContent=name;
   document.getElementById('videoUrlCopy').value=isM3u8?url:location.origin+url;
   document.getElementById('modalDownloadBtn').style.display=isM3u8?'inline-flex':'none';
+  document.getElementById('playerInlineError').style.display='none';
   document.getElementById('playerModal').classList.add('active');
+  _showPlayerLoading('正在加载播放...');
   if(_hls){_hls.destroy();_hls=null;}
   if(isM3u8&&typeof Hls!=='undefined'&&Hls.isSupported()){
     let _mediaErrCount=0;
     _hls=new Hls({enableWorker:true,maxBufferLength:30});
     _hls.loadSource(url);_hls.attachMedia(video);
-    _hls.on(Hls.Events.MANIFEST_PARSED,()=>video.play().catch(()=>{}));
+    _hls.on(Hls.Events.MANIFEST_PARSED,()=>video.play().catch(()=>_showInlinePlayerError('播放启动失败，请稍后重试')));
     _hls.on(Hls.Events.ERROR,(ev,d)=>{
       if(!d.fatal)return;
       if(d.type===Hls.ErrorTypes.NETWORK_ERROR){
+        _showPlayerLoading('网络波动，正在重连...');
         _hls.startLoad();
       }else if(d.type===Hls.ErrorTypes.MEDIA_ERROR&&_mediaErrCount<2){
         _mediaErrCount++;
+        _showPlayerLoading('正在恢复播放...');
         _hls.recoverMediaError();
       }else{
-        const msg=d.type===Hls.ErrorTypes.NETWORK_ERROR?'网络错误，源可能已失效':'媒体解码失败';
-        toast(msg,'error');
+        const msg=d.type===Hls.ErrorTypes.NETWORK_ERROR?'网络错误，源可能已失效':'媒体解码失败，格式可能不兼容';
+        _showInlinePlayerError(msg);
       }
     });
   }else if(isM3u8&&typeof video.canPlayType==='function'&&video.canPlayType('application/vnd.apple.mpegurl')){
-    // Safari / iOS 原生 HLS 支持
-    video.src=url;video.play().catch(()=>{});
+    video.src=url;video.play().catch(()=>_showInlinePlayerError('播放启动失败，请稍后重试'));
   }else{
     video.src=url;
+    video.play().catch(()=>_showInlinePlayerError('播放启动失败，请稍后重试'));
   }
 }
 function closePlayer(){
   document.getElementById('playerModal').classList.remove('active');
+  document.getElementById('playerInlineError').style.display='none';
+  _hidePlayerLoading();
   const v=document.getElementById('player');v.pause();
-  if(_hls){_hls.destroy();_hls=null;}v.src='';
+  if(_hls){_hls.destroy();_hls=null;}v.src='';v.load();
 }
 function copyVideoUrl(){navigator.clipboard.writeText(document.getElementById('videoUrlCopy').value);toast('链接已复制');}
 function downloadCurrentStream(){if(_currentStreamUrl)downloadEpisode(_currentStreamUrl,_currentStreamName);}

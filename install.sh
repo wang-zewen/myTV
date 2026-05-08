@@ -36,6 +36,7 @@ echo -e "${YELLOW}[3/4] 更新程序文件...${NC}"
 cp "$SCRIPT_DIR/backend/main.py" "$INSTALL_DIR/main.py"
 cp "$SCRIPT_DIR/frontend/index.html" "$INSTALL_DIR/index.html"
 cp "$SCRIPT_DIR/frontend/public.html" "$INSTALL_DIR/public.html"
+cp "$SCRIPT_DIR/frontend/favicon.svg" "$INSTALL_DIR/favicon.svg"
 
 if [ ! -f "$DATA_FILE" ]; then
   echo '{"api_sources": [], "subscriptions": {}, "settings": {"check_interval": 3600, "password_hash": ""}, "emby_config": {"url": "", "api_key": "", "user_id": "", "password_hash": ""}}' > "$DATA_FILE"

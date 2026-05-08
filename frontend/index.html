@@ -9,11 +9,11 @@
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
 :root {
-  --bg:#07070d;--s1:#0d0d16;--s2:#131320;--s3:#1a1a2a;--s4:#222236;
-  --border:#252538;--border2:#32324c;
-  --accent:#818cf8;--accent2:#f472b6;
+  --bg:#0b1020;--s1:#111827;--s2:#172033;--s3:#1e293b;--s4:#263245;
+  --border:#2a3547;--border2:#3a4860;
+  --accent:#818cf8;--accent2:#a78bfa;
   --green:#34d399;--yellow:#fbbf24;--red:#f87171;--orange:#fb923c;
-  --text:#e4e4f0;--muted:#5e5e7c;--r:11px;
+  --text:#e5e7eb;--muted:#94a3b8;--r:11px;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,sans-serif;min-height:100vh;}
@@ -541,8 +541,11 @@ function nav(page){
   if(page==='emby') loadEmbyConfig();
 }
 // 绑定导航点击
-document.querySelectorAll('#mainNav a').forEach(a=>{
-  a.addEventListener('click',()=>nav(a.dataset.page));
+document.querySelectorAll('#mainNav a[data-page]').forEach(a=>{
+  a.addEventListener('click',e=>{
+    e.preventDefault();
+    nav(a.dataset.page);
+  });
 });
 
 // ── 认证 ──────────────────────────────────────────────

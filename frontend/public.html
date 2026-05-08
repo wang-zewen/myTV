@@ -140,8 +140,6 @@ button{cursor:pointer;font-family:inherit;}
 .center-play-btn{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:76px;height:76px;border:none;border-radius:999px;background:rgba(255,255,255,.94);color:var(--acc);font-size:30px;font-weight:800;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 14px 34px rgba(15,23,42,.18);z-index:4;transition:opacity .18s,transform .18s,background .18s;}
 .center-play-btn:hover{transform:translate(-50%,-50%) scale(1.06);background:#fff;}
 .center-play-btn.hidden{opacity:0;pointer-events:none;}
-.secondary-play-btn{padding:10px 18px;border:none;border-radius:10px;background:var(--acc-g);color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 6px 18px rgba(99,102,241,.24);}
-.secondary-play-btn:hover{filter:brightness(1.06);}
 .nav-video-btn{padding:10px 16px;border:1px solid var(--border);border-radius:10px;background:var(--s1);color:var(--fg2);font-size:13px;font-weight:600;cursor:pointer;}
 .nav-video-btn:hover{border-color:rgba(99,102,241,.3);background:var(--s2);color:var(--fg);}
 .nav-video-btn:disabled{opacity:.45;cursor:not-allowed;}
@@ -214,7 +212,6 @@ button{cursor:pointer;font-family:inherit;}
       <div class="player-err" id="playerErr"><span style="font-size:36px">⚠️</span><span id="playerErrMsg">播放失败</span></div>
     </div>
     <div class="player-actions-row">
-      <button id="primaryPlayBtn" class="secondary-play-btn" onclick="playCurrentVideo()">▶ 播放</button>
       <button id="prevVideoBtn" class="nav-video-btn" onclick="playAdjacentVideo(-1)">← 上一个</button>
       <button id="nextVideoBtn" class="nav-video-btn" onclick="playAdjacentVideo(1)">下一个 →</button>
     </div>
@@ -505,8 +502,7 @@ function _setCurrentPlayable(payload,index=-1){
   _currentPlayable=payload;
   _currentPlayableIndex=index;
   const hasPlayable=!!payload;
-  const pp=$('primaryPlayBtn'), prev=$('prevVideoBtn'), next=$('nextVideoBtn');
-  if(pp) pp.style.display=hasPlayable?'inline-flex':'none';
+  const prev=$('prevVideoBtn'), next=$('nextVideoBtn');
   updateCenterPlayOverlay(hasPlayable);
   if(prev) prev.disabled=!(index>0);
   if(next) next.disabled=!(index>=0 && index<vodArr.length-1);

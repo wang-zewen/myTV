@@ -24,18 +24,18 @@ button{cursor:pointer;font-family:inherit;}
 ::-webkit-scrollbar-thumb{background:var(--s4);border-radius:2px;}
 
 /* ── header ── */
-.hd{position:sticky;top:0;z-index:100;background:rgba(7,7,13,.92);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-bottom:1px solid rgba(124,111,255,.09);}
+.hd{position:sticky;top:0;z-index:100;background:rgba(255,255,255,.96);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--border);box-shadow:0 1px 0 rgba(99,102,241,.06);}
 .hd-inner{display:flex;align-items:center;gap:14px;max-width:1440px;margin:0 auto;padding:12px 24px;}
-.logo{font-size:19px;font-weight:900;letter-spacing:-.5px;white-space:nowrap;background:linear-gradient(120deg,#c084fc,#818cf8 55%,#b48cff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-decoration:none;display:inline-flex;align-items:baseline;filter:drop-shadow(0 0 14px rgba(124,111,255,.28));}
+.logo{font-size:19px;font-weight:900;letter-spacing:-.5px;white-space:nowrap;background:linear-gradient(120deg,#6366f1,#8b5cf6 55%,#6366f1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-decoration:none;display:inline-flex;align-items:baseline;}
 .logo-sub{-webkit-text-fill-color:var(--dim);font-size:12px;font-weight:400;margin-left:5px;filter:none;}
-.search-wrap{flex:1;max-width:560px;display:flex;align-items:center;background:var(--s2);border:1px solid rgba(255,255,255,.06);border-radius:11px;transition:border-color .2s,box-shadow .2s;}
-.search-wrap:focus-within{border-color:rgba(124,111,255,.48);box-shadow:0 0 0 3px rgba(124,111,255,.07);}
+.search-wrap{flex:1;max-width:560px;display:flex;align-items:center;background:var(--s2);border:1px solid var(--border);border-radius:11px;transition:border-color .2s,box-shadow .2s;}
+.search-wrap:focus-within{border-color:rgba(99,102,241,.48);box-shadow:0 0 0 3px rgba(99,102,241,.07);}
 .search-input{flex:1;background:none;border:none;outline:none;padding:10px 16px;color:var(--fg);font-size:14px;}
 .search-input::placeholder{color:var(--dim);}
-.search-btn{background:none;border:none;border-left:1px solid rgba(255,255,255,.06);padding:9px 16px;color:var(--dim);font-size:14px;transition:color .15s;border-radius:0 11px 11px 0;}
-.search-btn:hover{color:var(--acc2);}
-.admin-btn{background:var(--s2);border:1px solid rgba(255,255,255,.07);border-radius:var(--rsm);padding:8px 15px;font-size:12px;font-weight:600;color:var(--fg2);text-decoration:none;white-space:nowrap;transition:.18s;letter-spacing:.02em;}
-.admin-btn:hover{color:var(--fg);border-color:rgba(124,111,255,.38);background:var(--s3);}
+.search-btn{background:none;border:none;border-left:1px solid var(--border);padding:9px 16px;color:var(--dim);font-size:14px;transition:color .15s;border-radius:0 11px 11px 0;}
+.search-btn:hover{color:var(--acc);}
+.admin-btn{background:var(--s2);border:1px solid var(--border);border-radius:var(--rsm);padding:8px 15px;font-size:12px;font-weight:600;color:var(--fg2);text-decoration:none;white-space:nowrap;transition:.18s;letter-spacing:.02em;}
+.admin-btn:hover{color:var(--fg);border-color:rgba(99,102,241,.38);background:var(--s3);}
 @media(max-width:500px){.admin-btn{display:none;}}
 
 /* ── source tabs ── */
@@ -43,7 +43,7 @@ button{cursor:pointer;font-family:inherit;}
 .src-nav::-webkit-scrollbar{display:none;}
 .stab{background:none;border:none;border-bottom:2px solid transparent;padding:13px 18px;font-size:13px;font-weight:600;color:var(--dim);white-space:nowrap;transition:.18s;display:flex;align-items:center;gap:7px;}
 .stab.on{color:var(--acc2);border-bottom-color:var(--acc);}
-.stab:hover:not(.on){color:var(--fg);background:rgba(255,255,255,.025);}
+.stab:hover:not(.on){color:var(--fg);background:rgba(99,102,241,.06);}
 .stab .dot{width:6px;height:6px;border-radius:50%;background:var(--dim);transition:.18s;}
 .stab.on .dot{background:var(--acc);box-shadow:0 0 6px rgba(124,111,255,.55);}
 
@@ -74,12 +74,12 @@ button{cursor:pointer;font-family:inherit;}
 @media(min-width:1400px){.grid{grid-template-columns:repeat(auto-fill,minmax(188px,1fr));}}
 
 /* ── card ── */
-.vc{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;cursor:pointer;transition:transform .26s cubic-bezier(.34,1.4,.64,1),border-color .2s,box-shadow .26s;box-shadow:0 2px 10px rgba(0,0,0,.3);}
-.vc:hover{transform:translateY(-7px) scale(1.018);border-color:rgba(124,111,255,.44);box-shadow:0 20px 52px rgba(0,0,0,.55),0 0 0 1px rgba(124,111,255,.12),0 0 30px rgba(124,111,255,.05);}
+.vc{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;cursor:pointer;transition:transform .26s cubic-bezier(.34,1.4,.64,1),border-color .2s,box-shadow .26s;box-shadow:0 2px 8px rgba(0,0,0,.06);}
+.vc:hover{transform:translateY(-6px) scale(1.016);border-color:rgba(99,102,241,.38);box-shadow:0 14px 36px rgba(0,0,0,.12),0 0 0 1px rgba(99,102,241,.1);}
 .vc-thumb{aspect-ratio:2/3;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;}
 .vc-thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .35s ease;}
 .vc:hover .vc-thumb img{transform:scale(1.06);}
-.vc-thumb-icon{position:absolute;font-size:36px;opacity:.18;pointer-events:none;}
+.vc-thumb-icon{position:absolute;font-size:36px;opacity:.45;pointer-events:none;}
 .vc-tag{position:absolute;bottom:8px;left:8px;background:rgba(0,0,0,.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:5px;letter-spacing:.04em;}
 .vc-overlay{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.6) 0%,rgba(0,0,0,.08) 55%,transparent 100%);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .22s;}
 .vc:hover .vc-overlay{opacity:1;}
@@ -114,12 +114,12 @@ button{cursor:pointer;font-family:inherit;}
 /* ── detail view ── */
 .dv{display:none;}
 .dv-nav{display:flex;align-items:center;gap:12px;padding:16px 0 20px;}
-.back-btn{background:var(--s2);border:1px solid rgba(255,255,255,.07);border-radius:var(--rsm);padding:8px 16px;font-size:13px;font-weight:600;color:var(--fg2);display:flex;align-items:center;gap:6px;transition:.18s;}
-.back-btn:hover{color:var(--fg);border-color:rgba(124,111,255,.38);background:var(--s3);}
+.back-btn{background:var(--s2);border:1px solid var(--border);border-radius:var(--rsm);padding:8px 16px;font-size:13px;font-weight:600;color:var(--fg2);display:flex;align-items:center;gap:6px;transition:.18s;}
+.back-btn:hover{color:var(--fg);border-color:rgba(99,102,241,.38);background:var(--s3);}
 .dv-crumb{font-size:12px;color:var(--dim);font-weight:500;background:var(--s2);border:1px solid var(--border);padding:4px 10px;border-radius:6px;}
-.player-box{background:#000;border-radius:var(--r);overflow:hidden;aspect-ratio:16/9;position:relative;box-shadow:0 0 0 1px rgba(124,111,255,.1),0 30px 72px rgba(0,0,0,.9),0 0 60px rgba(124,111,255,.04);}
+.player-box{background:#000;border-radius:var(--r);overflow:hidden;aspect-ratio:16/9;position:relative;box-shadow:0 0 0 1px var(--border),0 16px 48px rgba(0,0,0,.18);}
 .player-box video{width:100%;height:100%;display:block;}
-.player-err{position:absolute;inset:0;background:rgba(0,0,0,.92);display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--dim);font-size:14px;}
+.player-err{position:absolute;inset:0;background:rgba(15,23,42,.88);display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#cbd5e1;font-size:14px;}
 .dv-body{padding:20px 0 8px;}
 .dv-title{font-size:22px;font-weight:800;line-height:1.25;margin-bottom:10px;letter-spacing:-.3px;}
 .dv-meta{font-size:12px;color:var(--fg2);line-height:2.1;}
@@ -138,8 +138,8 @@ button{cursor:pointer;font-family:inherit;}
 
 <!-- Emby 密码弹窗 -->
 <style>
-.emby-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:200;align-items:center;justify-content:center;}
-.emby-box{background:var(--s2);border:1px solid rgba(124,111,255,.15);border-radius:16px;padding:36px 32px;width:300px;text-align:center;box-shadow:0 32px 80px rgba(0,0,0,.7);}
+.emby-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.6);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:200;align-items:center;justify-content:center;}
+.emby-box{background:var(--s1);border:1px solid var(--border);border-radius:16px;padding:36px 32px;width:300px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.18);}
 .emby-icon{font-size:34px;margin-bottom:12px;line-height:1;}
 .emby-title{font-size:17px;font-weight:800;margin-bottom:5px;letter-spacing:-.2px;}
 .emby-desc{font-size:13px;color:var(--dim);margin-bottom:20px;line-height:1.5;}
@@ -193,7 +193,7 @@ button{cursor:pointer;font-family:inherit;}
     </div>
     <div class="player-box">
       <video id="player" controls playsinline></video>
-      <div id="playerLoading" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:rgba(0,0,0,.55);color:var(--fg2);font-size:13px;z-index:2;">
+      <div id="playerLoading" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:rgba(255,255,255,.72);color:var(--fg2);font-size:13px;z-index:2;">
         <div style="width:28px;height:28px;border:3px solid rgba(255,255,255,.18);border-top-color:var(--acc2);border-radius:50%;animation:spin 1s linear infinite;"></div>
         <span id="playerLoadingText">正在加载播放...</span>
       </div>
@@ -269,7 +269,7 @@ function localCard(v,i){
   const hue=hash(v.name)%360;
   const date=new Date(v.created_at).toLocaleDateString('zh-CN');
   return `<div class="vc" onclick="openDetail(${i})">
-    <div class="vc-thumb" style="background:linear-gradient(145deg,hsl(${hue},38%,17%),hsl(${(hue+50)%360},30%,10%))">
+    <div class="vc-thumb" style="background:linear-gradient(145deg,hsl(${hue},35%,78%),hsl(${(hue+50)%360},28%,68%))">
       <div class="vc-thumb-icon">🎬</div>
       <div class="vc-overlay"><div class="play-circle">▶</div></div>
     </div>
@@ -350,7 +350,7 @@ function renderGrid(list,replace,showSrc){
 function cmsCard(v,i,showSrc){
   const hue=hash(v.vod_name)%360;
   const img=v.vod_pic?`<img src="${esc(v.vod_pic)}" loading="lazy" onerror="this.remove()">`:'';
-  const bg=`background:linear-gradient(145deg,hsl(${hue},32%,14%),hsl(${(hue+55)%360},24%,9%))`;
+  const bg=`background:linear-gradient(145deg,hsl(${hue},30%,80%),hsl(${(hue+55)%360},22%,70%))`;
   const tag=v.vod_remarks?`<div class="vc-tag">${esc(v.vod_remarks)}</div>`:'';
   const sub=[v.vod_year,v.type_name,v.vod_area].filter(Boolean).join(' · ');
   const badge=showSrc&&v.source_name?`<div class="vc-badge">${esc(v.source_name)}</div>`:'';
@@ -448,7 +448,7 @@ function renderEmbyGrid(items,replace){
 
 function embyCard(v,i){
   const hue=hash(v.name)%360;
-  const bg=`background:linear-gradient(145deg,hsl(${hue},32%,14%),hsl(${(hue+55)%360},24%,9%))`;
+  const bg=`background:linear-gradient(145deg,hsl(${hue},30%,80%),hsl(${(hue+55)%360},22%,70%))`;
   const img=v.thumb?`<img src="${esc(v.thumb)}" loading="lazy" onerror="this.remove()">`:'';
   const tag=v.type==='Series'?`<div class="vc-tag">剧集</div>`:v.year?`<div class="vc-tag">${esc(String(v.year))}</div>`:'';
   return `<div class="vc" onclick="openDetail(${i})">

@@ -566,8 +566,19 @@ async function openEmbyPerson(personId, personName){
   showBrowse();
   $('catOuter').style.display='none';
   setGrid(skelHtml(12));
-  $('secHd').innerHTML=secHdHtml(personName,'加载中...');
+  embyTotal=0;
+  _renderEmbyPersonHeader();
   await loadEmbyPersonItems(personId, 1);
+}
+
+function _renderEmbyPersonHeader(){
+  const label=curEmbyPerson?.name||'演员';
+  const backBtn=curEmbyItem?`<button class="back-btn" style="padding:6px 12px;font-size:12px" onclick="returnToEmbyDetail()">← 返回详情</button>`:'';
+  $('secHd').innerHTML=`<div class="sec-hd">${backBtn}<span class="sec-title">${esc(label)}</span>${embyTotal?`<span class="sec-count">${esc(String(embyTotal))} 个</span>`:''}</div>`;
+}
+
+function returnToEmbyDetail(){
+  if(curEmbyItem) openEmbyDetail(curEmbyItem);
 }
 
 async function loadEmbyPersonItems(personId, pg){
@@ -578,8 +589,7 @@ async function loadEmbyPersonItems(personId, pg){
     embyTotal=d.total||0;
     const items=(d.items||[]).map(i=>({...i,__emby:true}));
     if(pg===1){vodArr=items;}else{vodArr=[...vodArr,...items];}
-    const label=curEmbyPerson?.name||'演员';
-    if(pg===1) $('secHd').innerHTML=secHdHtml(label,`${embyTotal} 个`);
+    if(pg===1) _renderEmbyPersonHeader();
     renderEmbyGrid(items, pg===1);
     $('moreWrap').style.display=vodArr.length<embyTotal?'block':'none';
   }catch(e){setGrid(emptyHtml('⚠️','加载失败', e && e.message ? e.message : '演员作品加载失败'));}

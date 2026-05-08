@@ -19,7 +19,7 @@ import secrets
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -1344,10 +1344,10 @@ async def tvbox_emby(request: Request):
                         s = ep.get("ParentIndexNumber", 1)
                         e = ep.get("IndexNumber", 0)
                         label = f"S{s}E{e:02d} {ep.get('Name', '')}"
-                        parts.append(f"{label}${_emby_stream_url(ep['Id'])}")
+                        parts.append(f"{label}${base_url}/api/emby/stream/{ep['Id']}")
                     play_url = "#".join(parts) if parts else f"暂无剧集${url}"
                 else:
-                    play_url = f"播放${_emby_stream_url(item_id)}"
+                    play_url = f"播放${base_url}/api/emby/stream/{item_id}"
 
                 vod_list.append({
                     "vod_id": item_id,
@@ -1695,6 +1695,15 @@ async def emby_image(item_id: str, w: int = 200):
             )
     except Exception:
         raise HTTPException(404, "图片不可用")
+
+
+@app.get("/api/emby/stream/{item_id}")
+async def emby_stream(item_id: str):
+    url = emby_config.get("url", "")
+    api_key = emby_config.get("api_key", "")
+    if not url or not api_key:
+        raise HTTPException(400, "Emby 未配置")
+    return RedirectResponse(url=f"{url}/Videos/{item_id}/stream?api_key={api_key}&static=true", status_code=307)
 
 
 @app.get("/api/emby/direct/{item_id}")

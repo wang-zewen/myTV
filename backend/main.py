@@ -19,7 +19,7 @@ import secrets
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -1697,13 +1697,46 @@ async def emby_image(item_id: str, w: int = 200):
         raise HTTPException(404, "图片不可用")
 
 
-@app.get("/api/emby/stream/{item_id}")
-async def emby_stream(item_id: str):
+@app.api_route("/api/emby/stream/{item_id}", methods=["GET", "HEAD"])
+async def emby_stream(item_id: str, request: Request):
+    """Reverse-proxy Emby stream so TVBox does not need to follow redirects or reach Emby directly."""
     url = emby_config.get("url", "")
     api_key = emby_config.get("api_key", "")
     if not url or not api_key:
         raise HTTPException(400, "Emby 未配置")
-    return RedirectResponse(url=f"{url}/Videos/{item_id}/stream?api_key={api_key}&static=true", status_code=307)
+
+    upstream_url = f"{url}/Videos/{item_id}/stream?api_key={api_key}&static=true"
+    headers = {}
+    range_header = request.headers.get("range")
+    if range_header:
+        headers["Range"] = range_header
+
+    try:
+        async with _make_http_client() as client:
+            upstream = await client.get(upstream_url, headers=headers, timeout=None)
+            upstream.raise_for_status()
+
+            passthrough_headers = {}
+            for key in [
+                "content-type", "content-length", "accept-ranges", "content-range",
+                "cache-control", "etag", "last-modified", "content-disposition"
+            ]:
+                if key in upstream.headers:
+                    passthrough_headers[key] = upstream.headers[key]
+
+            if request.method == "HEAD":
+                return Response(status_code=upstream.status_code, headers=passthrough_headers)
+
+            return Response(
+                content=upstream.content,
+                status_code=upstream.status_code,
+                headers=passthrough_headers,
+                media_type=upstream.headers.get("content-type", "video/mp4"),
+            )
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(e.response.status_code, f"Emby 上游返回 HTTP {e.response.status_code}")
+    except Exception as e:
+        raise HTTPException(502, f"Emby 播放代理失败: {e}")
 
 
 @app.get("/api/emby/direct/{item_id}")

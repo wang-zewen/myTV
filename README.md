@@ -8,22 +8,17 @@ streamvault/
 │   └── main.py        # FastAPI 后端
 ├── frontend/
 │   └── index.html     # 网页管理界面
-├── deploy.sh          # 一键安装脚本（从 GitHub 下载并安装）
 ├── install.sh         # 本地安装/更新脚本
 ├── data.example.json  # 默认示例配置（首次安装会复制为 data.json）
 └── README.md
 ```
 
-## 一键安装（推荐，无需 root）
+## 安装（推荐）
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/wang-zewen/myTV/main/deploy.sh)
-```
-
-或使用 wget：
-
-```bash
-bash <(wget -qO- https://raw.githubusercontent.com/wang-zewen/myTV/main/deploy.sh)
+git clone https://github.com/wang-zewen/myTV.git
+cd myTV
+bash install.sh
 ```
 
 安装完成后访问 `http://你的服务器IP:8080`

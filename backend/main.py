@@ -852,6 +852,25 @@ async def delete_video(filename: str):
     path.unlink()
     return {"ok": True}
 
+class RenameVideoRequest(BaseModel):
+    name: str
+
+@app.patch("/api/videos/{filename}/rename")
+async def rename_video(filename: str, data: RenameVideoRequest):
+    if "/" in filename or ".." in filename:
+        raise HTTPException(400, "非法文件名")
+    path = VIDEO_DIR / filename
+    if not path.exists():
+        raise HTTPException(404, "文件不存在")
+    new_name = _safe_filename(re.sub(r'[^\w\u4e00-\u9fff\-]', '_', data.name.strip()))
+    if not new_name:
+        raise HTTPException(400, "新名称不能为空")
+    new_path = path.with_name(new_name + path.suffix)
+    if new_path.exists() and new_path != path:
+        raise HTTPException(400, "目标文件名已存在")
+    path.rename(new_path)
+    return {"ok": True, "filename": new_path.name, "name": new_path.stem}
+
 @app.get("/api/stream/{filename}")
 async def stream_video(filename: str):
     if "/" in filename or ".." in filename:

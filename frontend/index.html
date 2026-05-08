@@ -282,6 +282,35 @@ input::placeholder{color:var(--muted);}
   </div>
 </div>
 
+<!-- 合并音视频 Modal -->
+<div class="modal-overlay" id="mergeModal" onclick="if(event.target===this)closeMergeModal()">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div class="modal-title">🎞 合并音视频</div>
+      <button class="modal-close" onclick="closeMergeModal()">✕</button>
+    </div>
+    <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+      <div>
+        <div class="slabel" style="margin-bottom:6px">视频文件</div>
+        <select id="mergeVideoSelect" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--s2);color:var(--fg);font-size:13px"></select>
+      </div>
+      <div>
+        <div class="slabel" style="margin-bottom:6px">音频文件</div>
+        <select id="mergeAudioSelect" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--s2);color:var(--fg);font-size:13px"></select>
+      </div>
+      <div>
+        <div class="slabel" style="margin-bottom:6px">输出文件名（不含扩展名）</div>
+        <input id="mergeOutputName" type="text" placeholder="输出文件名" style="width:100%;box-sizing:border-box"/>
+      </div>
+      <div id="mergeError" style="display:none;color:var(--red);font-size:12px;padding:8px 10px;background:rgba(248,113,113,.08);border-radius:7px;border:1px solid rgba(248,113,113,.2)"></div>
+    </div>
+    <div class="modal-footer" style="justify-content:flex-end">
+      <button class="btn btn-ghost btn-sm" onclick="closeMergeModal()">取消</button>
+      <button class="btn btn-primary btn-sm" id="mergeConfirmBtn" onclick="doMerge()">合并</button>
+    </div>
+  </div>
+</div>
+
 <div class="layout">
 <aside class="sidebar">
   <div class="brand">
@@ -981,24 +1010,43 @@ async function loadVideos(){
   };
 }
 
-document.getElementById('mergeMediaBtn').addEventListener('click',async()=>{
-  const r=await fetch('/api/videos');
-  const files=await r.json();
-  if(!files.length){toast('视频库为空','error');return;}
-  const names=files.map(f=>f.filename);
-  const videoFile=prompt('输入视频文件名（从视频库现有文件中选择）:
-'+names.join('
-'));
-  if(!videoFile) return;
-  const audioFile=prompt('输入音频文件名（需要已放在视频库目录中，例如 .m4a）:');
-  if(!audioFile) return;
-  const outputName=prompt('输入合并后的输出名称（不带扩展名）:');
-  if(!outputName) return;
-  const resp=await fetch('/api/videos/merge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({video_file:videoFile.trim(),audio_file:audioFile.trim(),output_name:outputName.trim()})});
+// ── 合并音视频 ──────────────────────────────────────────────
+function closeMergeModal(){document.getElementById('mergeModal').classList.remove('active');}
+async function openMergeModal(){
+  const [vResp,aResp]=await Promise.all([fetch('/api/videos'),fetch('/api/videos/files')]);
+  const videos=await vResp.json();const allFiles=await aResp.json();
+  const vSel=document.getElementById('mergeVideoSelect');
+  const aSel=document.getElementById('mergeAudioSelect');
+  const VIDEO_EXTS=new Set(['.mp4','.mkv','.ts','.m4v','.webm','.avi','.mov']);
+  const AUDIO_EXTS=new Set(['.m4a','.aac','.mp3','.opus','.ogg','.flac','.wav','.webm']);
+  const vFiles=allFiles.filter(f=>VIDEO_EXTS.has(f.filename.slice(f.filename.lastIndexOf('.')).toLowerCase()));
+  const aFiles=allFiles.filter(f=>AUDIO_EXTS.has(f.filename.slice(f.filename.lastIndexOf('.')).toLowerCase()));
+  if(!vFiles.length&&!allFiles.length){toast('视频库为空','error');return;}
+  vSel.innerHTML=(vFiles.length?vFiles:allFiles).map(f=>`<option value="${esc(f.filename)}">${esc(f.filename)} (${f.size_mb} MB)</option>`).join('');
+  aSel.innerHTML=(aFiles.length?aFiles:allFiles).map(f=>`<option value="${esc(f.filename)}">${esc(f.filename)} (${f.size_mb} MB)</option>`).join('');
+  if(vSel.options.length){
+    const stem=vSel.options[0].value.replace(/\.[^.]+$/,'');
+    document.getElementById('mergeOutputName').value=stem+'_merged';
+  }
+  document.getElementById('mergeError').style.display='none';
+  document.getElementById('mergeModal').classList.add('active');
+}
+async function doMerge(){
+  const videoFile=document.getElementById('mergeVideoSelect').value;
+  const audioFile=document.getElementById('mergeAudioSelect').value;
+  const outputName=document.getElementById('mergeOutputName').value.trim();
+  const errEl=document.getElementById('mergeError');
+  const btn=document.getElementById('mergeConfirmBtn');
+  errEl.style.display='none';
+  if(!outputName){errEl.textContent='请输入输出文件名';errEl.style.display='block';return;}
+  btn.disabled=true;btn.textContent='合并中...';
+  const resp=await fetch('/api/videos/merge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({video_file:videoFile,audio_file:audioFile,output_name:outputName})});
   const data=await resp.json().catch(()=>({}));
-  if(resp.ok){toast(`合并完成：${data.name||outputName}`);loadVideos();}
-  else toast(data.detail||'合并失败','error');
-});
+  btn.disabled=false;btn.textContent='合并';
+  if(resp.ok){closeMergeModal();toast(`合并完成：${data.name||outputName}`);loadVideos();}
+  else{errEl.textContent=data.detail||'合并失败';errEl.style.display='block';}
+}
+document.getElementById('mergeMediaBtn').addEventListener('click',openMergeModal);
 
 // ── 播放器 ──────────────────────────────────────────────
 let _hls=null,_currentStreamUrl=null,_currentStreamName=null,_adminPlayerBound=false;

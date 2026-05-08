@@ -236,6 +236,7 @@ let curEmbyItem=null;
 let curEmbyPerson=null;
 let _embyBrowseRestore=null;
 let _embyCurPeople=[];
+let _browseScrollY=0;
 
 // ── init ──────────────────────────────────────────────────────
 async function init(){
@@ -305,6 +306,7 @@ async function fetchCatalog(srcUrl,typeId,pg,resetCats){
   try{
     const r=await fetch('/api/catalog?'+p);
     const d=await r.json();
+    page=pg;
     pageCount=d.pagecount||1;
     if(resetCats){
       const cats=d.class||[];
@@ -313,28 +315,17 @@ async function fetchCatalog(srcUrl,typeId,pg,resetCats){
       renderCatBar(cats);
     }
     const list=d.list||[];
-    if(pg===1){
-      vodArr=list;
-      $('secHd').innerHTML=list.length?secHdHtml(sources.find(s=>s.url===srcUrl)?.name||'',''):'' ;
-      renderGrid(list,true,false);
-    }else{
-      vodArr=[...vodArr,...list];
-      renderGrid(list,false,false);
-    }
-    $('moreWrap').style.display=page<pageCount?'block':'none';
+    vodArr=list;
+    $('secHd').innerHTML=list.length?secHdHtml(sources.find(s=>s.url===srcUrl)?.name||'',`第 ${page} / ${pageCount} 页`):'' ;
+    renderGrid(list,true,false);
+    renderPager(page,pageCount,'gotoCatalogPage');
+    window.scrollTo({top:0,behavior:'auto'});
   }catch(e){setGrid(emptyHtml('⚠️','加载失败','请检查接口是否可用'));}
 }
 
-async function loadMore(){
-  if(isEmby){
-    embyPage++;
-    if(curEmbyPerson) await loadEmbyPersonItems(curEmbyPerson.id,embyPage);
-    else await loadEmbyItems(curEmbyLib,embyPage);
-    return;
-  }
-  if(page>=pageCount||isSearch||isLocal)return;
-  page++;
-  await fetchCatalog(curSrc,curCat,page,false);
+async function gotoCatalogPage(pg){
+  if(pg<1||pg>pageCount||isSearch||isLocal)return;
+  await fetchCatalog(curSrc,curCat,pg,false);
 }
 
 function renderCatBar(cats){
@@ -443,14 +434,21 @@ async function loadEmbyItems(libId,pg){
     const r=await fetch('/api/emby/items?'+p);
     const d=await r.json();
     if(!r.ok) throw new Error(d.detail||d.error||'Emby 分类加载失败');
+    embyPage=pg;
     embyTotal=d.total||0;
-    const items=(d.items||[]).map(i=>({...i,__emby:true}));
-    if(pg===1){vodArr=items;}else{vodArr=[...vodArr,...items];}
+    vodArr=(d.items||[]).map(i=>({...i,__emby:true}));
     const libName=libId?embyLibraries.find(l=>l.id===libId)?.name||'Emby':'Emby 全部';
-    if(pg===1) $('secHd').innerHTML=secHdHtml(libName,`${embyTotal} 个`);
-    renderEmbyGrid(items,pg===1);
-    $('moreWrap').style.display=vodArr.length<embyTotal?'block':'none';
+    $('secHd').innerHTML=secHdHtml(libName,`${embyTotal} 个 · 第 ${embyPage} 页`);
+    renderEmbyGrid(vodArr,true);
+    renderPager(embyPage, Math.max(1, Math.ceil(embyTotal/40)), 'gotoEmbyPage');
+    window.scrollTo({top:0,behavior:'auto'});
   }catch(e){setGrid(emptyHtml('⚠️','加载失败', e && e.message ? e.message : 'Emby 分类加载失败'));}
+}
+
+async function gotoEmbyPage(pg){
+  const totalPages=Math.max(1, Math.ceil(embyTotal/40));
+  if(pg<1||pg>totalPages)return;
+  await loadEmbyItems(curEmbyLib, pg);
 }
 
 
@@ -614,13 +612,20 @@ async function loadEmbyPersonItems(personId, pg){
     const r=await fetch(`/api/emby/person/${encodeURIComponent(personId)}?pg=${pg}&limit=40`);
     const d=await r.json();
     if(!r.ok) throw new Error(d.detail||'演员作品加载失败');
+    embyPage=pg;
     embyTotal=d.total||0;
-    const items=(d.items||[]).map(i=>({...i,__emby:true}));
-    if(pg===1){vodArr=items;}else{vodArr=[...vodArr,...items];}
-    if(pg===1) _renderEmbyPersonHeader();
-    renderEmbyGrid(items, pg===1);
-    $('moreWrap').style.display=vodArr.length<embyTotal?'block':'none';
+    vodArr=(d.items||[]).map(i=>({...i,__emby:true}));
+    _renderEmbyPersonHeader();
+    renderEmbyGrid(vodArr, true);
+    renderPager(embyPage, Math.max(1, Math.ceil(embyTotal/40)), 'gotoEmbyPersonPage');
+    window.scrollTo({top:0,behavior:'auto'});
   }catch(e){setGrid(emptyHtml('⚠️','加载失败', e && e.message ? e.message : '演员作品加载失败'));}
+}
+
+async function gotoEmbyPersonPage(pg){
+  const totalPages=Math.max(1, Math.ceil(embyTotal/40));
+  if(pg<1||pg>totalPages||!curEmbyPerson) return;
+  await loadEmbyPersonItems(curEmbyPerson.id, pg);
 }
 
 // ── search ─────────────────────────────────────────────────────
@@ -783,8 +788,19 @@ function goBack(){
 }
 
 // ── helpers ────────────────────────────────────────────────────
-function showBrowse(){$('browseView').style.display='block';$('detailView').style.display='none';}
-function showDetail(){$('detailView').style.display='block';$('browseView').style.display='none';$('catOuter').style.display='none';}
+function rememberBrowseScroll(){_browseScrollY=window.scrollY||document.documentElement.scrollTop||0;}
+function restoreBrowseScroll(){requestAnimationFrame(()=>window.scrollTo({top:_browseScrollY,behavior:'auto'}));}
+function showBrowse(){$('browseView').style.display='block';$('detailView').style.display='none';restoreBrowseScroll();}
+function showDetail(){rememberBrowseScroll();$('detailView').style.display='block';$('browseView').style.display='none';$('catOuter').style.display='none';window.scrollTo({top:0,behavior:'auto'});}
+function renderPager(cur,total,fnName){
+  if(!total||total<=1){$('moreWrap').style.display='none';return;}
+  $('moreWrap').style.display='block';
+  $('moreWrap').innerHTML=`<div style="display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap">
+    <button class="more-btn" ${cur<=1?'disabled':''} onclick="${fnName}(${cur-1})">上一页</button>
+    <span class="sec-count">第 ${cur} / ${total} 页</span>
+    <button class="more-btn" ${cur>=total?'disabled':''} onclick="${fnName}(${cur+1})">下一页</button>
+  </div>`;
+}
 
 function hash(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))&0xffffffff;return Math.abs(h);}
 

@@ -234,6 +234,7 @@ let _playerReadyBound=false;
 let embyLibraries=[], curEmbyLib='', embyPage=1, embyTotal=0;
 let curEmbyItem=null;
 let curEmbyPerson=null;
+let _embyBrowseRestore=null;
 let _embyCurPeople=[];
 
 // ── init ──────────────────────────────────────────────────────
@@ -558,6 +559,15 @@ function _browseByPersonIdx(idx){
 }
 
 async function openEmbyPerson(personId, personName){
+  _embyBrowseRestore={
+    curEmbyLib,
+    embyPage,
+    embyTotal,
+    vodArr:[...vodArr],
+    secHd:$('secHd').innerHTML,
+    moreWrap:$('moreWrap').style.display,
+    catOuter:$('catOuter').style.display,
+  };
   curSrc=EMBY;isEmby=true;isLocal=false;isSearch=false;
   curEmbyPerson={id:personId,name:personName};
   embyPage=1; vodArr=[];
@@ -582,6 +592,21 @@ function returnToEmbyDetail(){
     showDetail();
     openEmbyDetail(curEmbyItem);
   }
+}
+
+function _restoreEmbyBrowseAfterPerson(){
+  if(!_embyBrowseRestore) return false;
+  curEmbyPerson=null;
+  curEmbyLib=_embyBrowseRestore.curEmbyLib||'';
+  embyPage=_embyBrowseRestore.embyPage||1;
+  embyTotal=_embyBrowseRestore.embyTotal||0;
+  vodArr=Array.isArray(_embyBrowseRestore.vodArr)?[..._embyBrowseRestore.vodArr]:[];
+  $('secHd').innerHTML=_embyBrowseRestore.secHd||'';
+  $('grid').innerHTML=vodArr.length ? vodArr.map((v,i)=>embyCard(v,i)).join('') : emptyHtml('📭','暂无内容','');
+  $('moreWrap').style.display=_embyBrowseRestore.moreWrap||'none';
+  $('catOuter').style.display=_embyBrowseRestore.catOuter||'block';
+  _embyBrowseRestore=null;
+  return true;
 }
 
 async function loadEmbyPersonItems(personId, pg){
@@ -752,6 +777,7 @@ function goBack(){
   $('embyActions').style.display='none';
   $('detailView').style.display='none';
   $('browseView').style.display='block';
+  if(isEmby && curEmbyPerson && _restoreEmbyBrowseAfterPerson()) return;
   if(!isSearch&&!isLocal&&hasCats&&!isEmby)$('catOuter').style.display='block';
   if(isEmby&&embyLibraries.length)$('catOuter').style.display='block';
 }

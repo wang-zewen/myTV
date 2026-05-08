@@ -1558,6 +1558,7 @@ async def emby_items(parent_id: str = "", pg: int = 1, limit: int = 40):
                     continue
                 seen.add(item["id"])
                 dedup.append(item)
+            dedup.sort(key=lambda x: ((x.get("name") or "").lower(), x.get("id") or ""))
             total = len(dedup)
             start = max(0, (pg - 1) * limit)
             return {"items": dedup[start:start+limit], "total": total, "page": pg}

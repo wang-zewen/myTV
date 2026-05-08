@@ -793,13 +793,19 @@ function restoreBrowseScroll(){requestAnimationFrame(()=>window.scrollTo({top:_b
 function showBrowse(){$('browseView').style.display='block';$('detailView').style.display='none';restoreBrowseScroll();}
 function showDetail(){rememberBrowseScroll();$('detailView').style.display='block';$('browseView').style.display='none';$('catOuter').style.display='none';window.scrollTo({top:0,behavior:'auto'});}
 function renderPager(cur,total,fnName){
-  if(!total||total<=1){$('moreWrap').style.display='none';return;}
+  if(!total||total<=1){$('moreWrap').style.display='none';$('moreWrap').innerHTML='';return;}
   $('moreWrap').style.display='block';
   $('moreWrap').innerHTML=`<div style="display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap">
-    <button class="more-btn" ${cur<=1?'disabled':''} onclick="${fnName}(${cur-1})">上一页</button>
+    <button class="more-btn" id="pagerPrevBtn" ${cur<=1?'disabled':''}>上一页</button>
     <span class="sec-count">第 ${cur} / ${total} 页</span>
-    <button class="more-btn" ${cur>=total?'disabled':''} onclick="${fnName}(${cur+1})">下一页</button>
+    <button class="more-btn" id="pagerNextBtn" ${cur>=total?'disabled':''}>下一页</button>
   </div>`;
+  const fn=window[fnName];
+  if(typeof fn==='function'){
+    const prev=$('pagerPrevBtn'), next=$('pagerNextBtn');
+    if(prev && cur>1) prev.onclick=()=>fn(cur-1);
+    if(next && cur<total) next.onclick=()=>fn(cur+1);
+  }
 }
 
 function hash(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))&0xffffffff;return Math.abs(h);}

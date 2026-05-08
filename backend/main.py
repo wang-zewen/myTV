@@ -1479,6 +1479,25 @@ async def emby_items(parent_id: str = "", pg: int = 1, limit: int = 40):
     user_id = emby_config.get("user_id", "")
     if not url or not api_key or not user_id:
         raise HTTPException(400, "Emby 未完整配置")
+
+    def _map_emby_items(raw_items: list) -> list:
+        items = []
+        for i in raw_items:
+            if i.get("Type") not in {"Movie", "Series"}:
+                continue
+            has_img = bool((i.get("ImageTags") or {}).get("Primary"))
+            thumb = f"/api/emby/image/{i['Id']}" if has_img else ""
+            items.append({
+                "id": i["Id"],
+                "name": i.get("Name", ""),
+                "type": i.get("Type", "Movie"),
+                "year": i.get("ProductionYear", ""),
+                "overview": (i.get("Overview") or "")[:200],
+                "thumb": thumb,
+                "rating": i.get("OfficialRating", ""),
+            })
+        return items
+
     try:
         async with _make_http_client() as client:
             params = {
@@ -1492,27 +1511,43 @@ async def emby_items(parent_id: str = "", pg: int = 1, limit: int = 40):
             }
             if parent_id:
                 params["ParentId"] = parent_id
-            r = await client.get(f"{url}/Users/{user_id}/Items",
-                                 headers={"X-Emby-Token": api_key},
-                                 params=params, timeout=12)
-            r.raise_for_status()
-            data = r.json()
-            items = []
-            for i in data.get("Items", []):
-                if i.get("Type") not in {"Movie", "Series"}:
+                r = await client.get(f"{url}/Users/{user_id}/Items",
+                                     headers={"X-Emby-Token": api_key},
+                                     params=params, timeout=12)
+                r.raise_for_status()
+                data = r.json()
+                items = _map_emby_items(data.get("Items", []))
+                return {"items": items, "total": data.get("TotalRecordCount", len(items)), "page": pg}
+
+            # root/all view: some Emby servers fail on querying everything at once.
+            views_r = await client.get(f"{url}/Users/{user_id}/Views",
+                                       headers={"X-Emby-Token": api_key}, timeout=10)
+            views_r.raise_for_status()
+            views = views_r.json().get("Items", [])
+            libs = [v for v in views if (v.get("CollectionType") or "").lower() in {"movies", "tvshows", "mixed"} or v.get("Type") == "CollectionFolder"]
+            collected = []
+            for lib in libs:
+                lib_params = dict(params)
+                lib_params["ParentId"] = lib["Id"]
+                try:
+                    lr = await client.get(f"{url}/Users/{user_id}/Items",
+                                          headers={"X-Emby-Token": api_key},
+                                          params=lib_params, timeout=12)
+                    lr.raise_for_status()
+                    collected.extend(lr.json().get("Items", []))
+                except Exception:
                     continue
-                has_img = bool((i.get("ImageTags") or {}).get("Primary"))
-                thumb = f"/api/emby/image/{i['Id']}" if has_img else ""
-                items.append({
-                    "id": i["Id"],
-                    "name": i.get("Name", ""),
-                    "type": i.get("Type", "Movie"),
-                    "year": i.get("ProductionYear", ""),
-                    "overview": (i.get("Overview") or "")[:200],
-                    "thumb": thumb,
-                    "rating": i.get("OfficialRating", ""),
-                })
-            return {"items": items, "total": data.get("TotalRecordCount", len(items)), "page": pg}
+            items = _map_emby_items(collected)
+            seen = set()
+            dedup = []
+            for item in items:
+                if item["id"] in seen:
+                    continue
+                seen.add(item["id"])
+                dedup.append(item)
+            total = len(dedup)
+            start = max(0, (pg - 1) * limit)
+            return {"items": dedup[start:start+limit], "total": total, "page": pg}
     except Exception as e:
         raise HTTPException(502, str(e))
 

@@ -488,13 +488,17 @@ function embyCard(v,i){
 
 function _clearPeopleChips(){const el=document.getElementById('dvPeopleChips');if(el)el.remove();}
 
+function updateCenterPlayOverlay(show){
+  const cp=$('centerPlayBtn');
+  if(cp) cp.classList.toggle('hidden', !show);
+}
 function _setCurrentPlayable(payload,index=-1){
   _currentPlayable=payload;
   _currentPlayableIndex=index;
   const hasPlayable=!!payload;
-  const pp=$('primaryPlayBtn'), cp=$('centerPlayBtn'), prev=$('prevVideoBtn'), next=$('nextVideoBtn');
+  const pp=$('primaryPlayBtn'), prev=$('prevVideoBtn'), next=$('nextVideoBtn');
   if(pp) pp.style.display=hasPlayable?'inline-flex':'none';
-  if(cp) cp.classList.toggle('hidden', !hasPlayable);
+  updateCenterPlayOverlay(hasPlayable);
   if(prev) prev.disabled=!(index>0);
   if(next) next.disabled=!(index>=0 && index<vodArr.length-1);
 }
@@ -765,7 +769,10 @@ function showPlayerError(msg){
 function _bindPlayerReady(video){
   if(_playerReadyBound)return;
   _playerReadyBound=true;
-  ['loadeddata','canplay','playing'].forEach(ev=>video.addEventListener(ev,hidePlayerLoading));
+  ['loadeddata','canplay'].forEach(ev=>video.addEventListener(ev,hidePlayerLoading));
+  video.addEventListener('playing',()=>{hidePlayerLoading();updateCenterPlayOverlay(false);});
+  video.addEventListener('pause',()=>{ if(_currentPlayable && !video.ended) updateCenterPlayOverlay(true); });
+  video.addEventListener('ended',()=>{ if(_currentPlayable) updateCenterPlayOverlay(true); });
   video.addEventListener('waiting',()=>showPlayerLoading('缓冲中...'));
   video.addEventListener('stalled',()=>showPlayerLoading('网络较慢，正在重试...'));
   video.addEventListener('error',()=>showPlayerError('视频播放失败，链接可能已失效或格式不兼容'));
@@ -774,6 +781,7 @@ function startPlay(video,url){
   stopPlayer();
   _bindPlayerReady(video);
   $('playerErr').style.display='none';
+  updateCenterPlayOverlay(false);
   showPlayerLoading('正在加载播放...');
   const isM3u8=/\.m3u8/i.test(url);
   if(isM3u8&&typeof Hls!=='undefined'&&Hls.isSupported()){
@@ -810,6 +818,7 @@ function stopPlayer(){
   hidePlayerLoading();
   $('playerErr').style.display='none';
   const v=$('player');v.pause();v.removeAttribute('src');v.load();
+  updateCenterPlayOverlay(!!_currentPlayable);
 }
 
 function goBack(){

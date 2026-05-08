@@ -975,7 +975,19 @@ async def tvbox_source(request: Request):
         "filterable": 0,
     })
 
-    # 2. 网页里配置的每个采集站（type=1，苹果CMS JSON接口）
+    # 2. Emby 媒体库（配置后才显示）
+    if emby_config.get("url") and emby_config.get("api_key"):
+        sites.append({
+            "key": "emby_library",
+            "name": "🎬 Emby 媒体库",
+            "type": 1,
+            "api": f"{base_url}/tvbox/emby",
+            "searchable": 0,
+            "quickSearch": 0,
+            "filterable": 0,
+        })
+
+    # 3. 网页里配置的每个采集站（type=1，苹果CMS JSON接口）
     for src in api_sources:
         if not src.get("enabled", True):
             continue
@@ -1071,6 +1083,170 @@ async def tvbox_config(request: Request):
         })
 
     # 其他 ac 值返回空
+    return JSONResponse({"code": 1, "msg": "ok", "list": [], "class": class_list})
+
+
+def _emby_stream_url(item_id: str) -> str:
+    """Return a direct Emby stream URL suitable for TVBox playback."""
+    return (f"{emby_config['url']}/Videos/{item_id}/stream"
+            f"?api_key={emby_config['api_key']}&static=true")
+
+
+@app.get("/tvbox/emby")
+async def tvbox_emby(request: Request):
+    """
+    TVBox Apple CMS endpoint for Emby content.
+    ac=list   → Emby libraries as classes; movies/series as vod list (filter by t=<class idx>)
+    ac=detail → item details with direct playback URLs; series exposes all episodes
+    """
+    url = emby_config.get("url", "")
+    api_key = emby_config.get("api_key", "")
+    user_id = emby_config.get("user_id", "")
+    base_url = str(request.base_url).rstrip("/")
+
+    if not url or not api_key:
+        return JSONResponse({"code": -1, "msg": "Emby 未配置", "list": [], "class": []})
+
+    ac = request.query_params.get("ac", "list")
+
+    async with httpx.AsyncClient(follow_redirects=True) as client:
+        # Always fetch libraries so we can build the class list
+        try:
+            lib_r = await client.get(
+                f"{url}/Users/{user_id}/Views",
+                headers={"X-Emby-Token": api_key}, timeout=10,
+            )
+            lib_r.raise_for_status()
+            libraries = [{"id": i["Id"], "name": i["Name"]}
+                         for i in lib_r.json().get("Items", [])]
+        except Exception:
+            libraries = []
+
+        # type_id is 1-based index into libraries list
+        class_list = [{"type_id": idx + 1, "type_name": lib["name"]}
+                      for idx, lib in enumerate(libraries)]
+
+        if ac == "list":
+            t_param = request.query_params.get("t", "0")
+            pg = max(1, int(request.query_params.get("pg", "1")))
+            limit = 40
+            try:
+                t_idx = int(t_param)
+            except ValueError:
+                t_idx = 0
+            parent_id = (libraries[t_idx - 1]["id"]
+                         if 0 < t_idx <= len(libraries) else "")
+
+            params = {
+                "IncludeItemTypes": "Movie,Series",
+                "Recursive": "true",
+                "Fields": "PrimaryImageAspectRatio,Overview,ProductionYear",
+                "StartIndex": (pg - 1) * limit,
+                "Limit": limit,
+                "SortBy": "DateCreated",
+                "SortOrder": "Descending",
+            }
+            if parent_id:
+                params["ParentId"] = parent_id
+
+            try:
+                r = await client.get(f"{url}/Users/{user_id}/Items",
+                                     headers={"X-Emby-Token": api_key},
+                                     params=params, timeout=15)
+                r.raise_for_status()
+                data = r.json()
+            except Exception as e:
+                return JSONResponse({"code": -1, "msg": str(e), "list": [], "class": class_list})
+
+            vod_list = []
+            for item in data.get("Items", []):
+                has_img = bool((item.get("ImageTags") or {}).get("Primary"))
+                vod_list.append({
+                    "vod_id": item["Id"],
+                    "vod_name": item["Name"],
+                    "type_id": t_idx or 1,
+                    "type_name": item.get("Type", ""),
+                    "vod_pic": f"{base_url}/api/emby/image/{item['Id']}" if has_img else "",
+                    "vod_remarks": str(item.get("ProductionYear", "")),
+                    "vod_time": "",
+                })
+
+            total = data.get("TotalRecordCount", len(vod_list))
+            pagecount = max(1, (total + limit - 1) // limit)
+            return JSONResponse({
+                "code": 1, "msg": "数据列表",
+                "page": pg, "pagecount": pagecount,
+                "limit": limit, "total": total,
+                "list": vod_list,
+                "class": class_list,
+            })
+
+        elif ac == "detail":
+            ids_param = request.query_params.get("ids", "")
+            vod_list = []
+
+            for item_id in ids_param.split(","):
+                item_id = item_id.strip()
+                if not item_id:
+                    continue
+                try:
+                    r = await client.get(
+                        f"{url}/Users/{user_id}/Items/{item_id}",
+                        headers={"X-Emby-Token": api_key},
+                        params={"Fields": "Overview,ProductionYear,OfficialRating"},
+                        timeout=10,
+                    )
+                    r.raise_for_status()
+                    item = r.json()
+                except Exception:
+                    continue
+
+                has_img = bool((item.get("ImageTags") or {}).get("Primary"))
+                item_type = item.get("Type", "")
+
+                if item_type == "Series":
+                    try:
+                        ep_r = await client.get(
+                            f"{url}/Shows/{item_id}/Episodes",
+                            headers={"X-Emby-Token": api_key},
+                            params={"UserId": user_id, "Fields": "Overview", "Limit": 500},
+                            timeout=15,
+                        )
+                        ep_r.raise_for_status()
+                        episodes = ep_r.json().get("Items", [])
+                    except Exception:
+                        episodes = []
+                    parts = []
+                    for ep in episodes:
+                        s = ep.get("ParentIndexNumber", 1)
+                        e = ep.get("IndexNumber", 0)
+                        label = f"S{s}E{e:02d} {ep.get('Name', '')}"
+                        parts.append(f"{label}${_emby_stream_url(ep['Id'])}")
+                    play_url = "#".join(parts) if parts else f"暂无剧集${url}"
+                else:
+                    play_url = f"播放${_emby_stream_url(item_id)}"
+
+                vod_list.append({
+                    "vod_id": item_id,
+                    "vod_name": item.get("Name", ""),
+                    "type_id": 1,
+                    "type_name": item_type,
+                    "vod_pic": f"{base_url}/api/emby/image/{item_id}" if has_img else "",
+                    "vod_remarks": str(item.get("ProductionYear", "")),
+                    "vod_content": (item.get("Overview") or "")[:500],
+                    "vod_time": "",
+                    "vod_play_from": "Emby",
+                    "vod_play_url": play_url,
+                })
+
+            return JSONResponse({
+                "code": 1, "msg": "数据列表",
+                "page": 1, "pagecount": 1,
+                "limit": len(vod_list), "total": len(vod_list),
+                "list": vod_list,
+                "class": class_list,
+            })
+
     return JSONResponse({"code": 1, "msg": "ok", "list": [], "class": class_list})
 
 

@@ -1,0 +1,25 @@
+# Runtime / download artifacts
+index_*/
+videos/
+*.log
+*.tmp
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Data & config (contain credentials)
+data.json
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

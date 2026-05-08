@@ -841,12 +841,16 @@ document.getElementById('manualDownloadBtn').addEventListener('click',async()=>{
   document.getElementById('manualUrl').value='';document.getElementById('manualName').value='';
   nav('tasks');
 });
-async function startDownload(url,name){
-  const r=await fetch('/api/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,name:name||undefined})});
+async function startDownload(url,name,mediaType='video'){
+  const r=await fetch('/api/download',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({url,name:name||undefined,media_type:mediaType||'video'})
+  });
   if(!r.ok){toast('提交失败','error');return;}
   const data=await r.json();
   toast(`开始下载：${data.name}`);
-  allTasks[data.task_id]={task_id:data.task_id,name:data.name,status:'downloading',progress:0,error:'',log:[],source:'manual',retries:0};
+  allTasks[data.task_id]={task_id:data.task_id,name:data.name,status:'downloading',progress:0,error:'',log:[],source:'manual',retries:0,media_type:data.media_type||mediaType||'video'};
   renderTasks();pollTask(data.task_id);updateTaskBadge();
 }
 function patchTask(t){

@@ -192,20 +192,34 @@ def _safe_filename(name: str, max_bytes: int = 200) -> str:
     truncated = encoded[:max_bytes].decode("utf-8", errors="ignore")
     return truncated.rstrip("_") or "video"
 
-def _find_output_file(output_name: str):
+def _find_output_file(output_name: str, media_type: str = "video"):
     """查找下载完成后的输出文件。
-    N_m3u8DL-RE 可能附加语言/分辨率标签（如 name.zh.mp4），
-    所以先精确匹配，再做前缀 glob，取最大的媒体文件（视频优先）。
+    N_m3u8DL-RE 可能附加语言/分辨率标签（如 name.zh.mp4）。
+    根据任务类型优先匹配对应后缀，避免音频任务误拿到旧视频文件，
+    再做前缀 glob，取同类型里最大的媒体文件。
     """
-    for ext in (*_VIDEO_EXTS, *_AUDIO_EXTS):
+    preferred_exts = (*_AUDIO_EXTS,) if media_type == "audio" else (*_VIDEO_EXTS, *_AUDIO_EXTS)
+    fallback_exts = (*_VIDEO_EXTS, *_AUDIO_EXTS) if media_type == "audio" else ()
+
+    for ext in (*preferred_exts, *fallback_exts):
         p = VIDEO_DIR / f"{output_name}{ext}"
         if p.exists():
             return p
-    candidates = [
+
+    preferred_set = set(preferred_exts)
+    fallback_set = set(fallback_exts)
+    preferred_candidates = [
         p for p in VIDEO_DIR.glob(f"{output_name}*")
-        if p.suffix.lower() in _ALL_MEDIA_EXTS
+        if p.suffix.lower() in preferred_set
     ]
-    return max(candidates, key=lambda p: p.stat().st_size) if candidates else None
+    if preferred_candidates:
+        return max(preferred_candidates, key=lambda p: p.stat().st_size)
+
+    fallback_candidates = [
+        p for p in VIDEO_DIR.glob(f"{output_name}*")
+        if p.suffix.lower() in fallback_set
+    ]
+    return max(fallback_candidates, key=lambda p: p.stat().st_size) if fallback_candidates else None
 
 
 
@@ -379,7 +393,7 @@ async def _run_download_core(task_id: str, url: str, output_name: str, media_typ
                 continue  # 进入下一次重试
 
             # 进程正常退出，做完整性校验
-            out_file = _find_output_file(output_name)
+            out_file = _find_output_file(output_name, media_type=media_type)
             if not out_file:
                 task.retries += 1
                 task.log_lines.append("[错误] 未找到输出文件")
@@ -757,10 +771,13 @@ async def start_download(req: DownloadRequest):
     task_id = str(uuid.uuid4())
     name = req.name or f"video_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     name = _safe_filename(re.sub(r'[^\w\u4e00-\u9fff\-]', '_', name))
-    task = TaskStatus(task_id, name, req.url)
+    media_type = (req.media_type or "video").lower()
+    if media_type not in {"video", "audio"}:
+        media_type = "video"
+    task = TaskStatus(task_id, name, req.url, media_type=media_type)
     tasks[task_id] = task
-    asyncio.create_task(run_download(task_id, req.url, name))
-    return {"task_id": task_id, "name": name}
+    asyncio.create_task(run_download(task_id, req.url, name, media_type=media_type))
+    return {"task_id": task_id, "name": name, "media_type": media_type}
 
 @app.post("/api/task/{task_id}/cancel")
 async def cancel_task(task_id: str):

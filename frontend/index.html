@@ -359,6 +359,9 @@ input::placeholder{color:var(--muted);}
   <div class="page" id="page-library">
     <div class="page-title">视频库</div>
     <div class="page-sub">已下载到服务器的视频</div>
+    <div style="display:flex;justify-content:flex-end;margin:-8px 0 16px 0">
+      <button class="btn btn-ghost btn-sm" id="mergeMediaBtn">🎞 合并音视频</button>
+    </div>
     <div id="diskspaceBar" style="margin-bottom:16px;display:none">
       <div style="display:flex;justify-content:space-between;font-family:'DM Mono',monospace;font-size:12px;color:var(--muted);margin-bottom:6px">
         <span>磁盘空间</span><span id="diskspaceText"></span>
@@ -977,6 +980,25 @@ async function loadVideos(){
     }
   };
 }
+
+document.getElementById('mergeMediaBtn').addEventListener('click',async()=>{
+  const r=await fetch('/api/videos');
+  const files=await r.json();
+  if(!files.length){toast('视频库为空','error');return;}
+  const names=files.map(f=>f.filename);
+  const videoFile=prompt('输入视频文件名（从视频库现有文件中选择）:
+'+names.join('
+'));
+  if(!videoFile) return;
+  const audioFile=prompt('输入音频文件名（需要已放在视频库目录中，例如 .m4a）:');
+  if(!audioFile) return;
+  const outputName=prompt('输入合并后的输出名称（不带扩展名）:');
+  if(!outputName) return;
+  const resp=await fetch('/api/videos/merge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({video_file:videoFile.trim(),audio_file:audioFile.trim(),output_name:outputName.trim()})});
+  const data=await resp.json().catch(()=>({}));
+  if(resp.ok){toast(`合并完成：${data.name||outputName}`);loadVideos();}
+  else toast(data.detail||'合并失败','error');
+});
 
 // ── 播放器 ──────────────────────────────────────────────
 let _hls=null,_currentStreamUrl=null,_currentStreamName=null,_adminPlayerBound=false;

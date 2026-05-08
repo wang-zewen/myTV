@@ -855,6 +855,11 @@ async def delete_video(filename: str):
 class RenameVideoRequest(BaseModel):
     name: str
 
+class MergeMediaRequest(BaseModel):
+    video_file: str
+    audio_file: str
+    output_name: str
+
 @app.patch("/api/videos/{filename}/rename")
 async def rename_video(filename: str, data: RenameVideoRequest):
     if "/" in filename or ".." in filename:
@@ -870,6 +875,47 @@ async def rename_video(filename: str, data: RenameVideoRequest):
         raise HTTPException(400, "目标文件名已存在")
     path.rename(new_path)
     return {"ok": True, "filename": new_path.name, "name": new_path.stem}
+
+@app.post("/api/videos/merge")
+async def merge_video_audio(data: MergeMediaRequest):
+    for field in [data.video_file, data.audio_file]:
+        if "/" in field or ".." in field:
+            raise HTTPException(400, "非法文件名")
+    video_path = VIDEO_DIR / data.video_file
+    audio_path = VIDEO_DIR / data.audio_file
+    if not video_path.exists() or not audio_path.exists():
+        raise HTTPException(404, "视频或音频文件不存在")
+    output_stem = _safe_filename(re.sub(r'[^\w\u4e00-\u9fff\-]', '_', data.output_name.strip()))
+    if not output_stem:
+        raise HTTPException(400, "输出名称不能为空")
+    output_path = VIDEO_DIR / f"{output_stem}.mp4"
+    if output_path.exists():
+        raise HTTPException(400, "目标文件已存在")
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise HTTPException(500, "系统未安装 ffmpeg")
+    import subprocess
+    cmd = [
+        ffmpeg, "-y",
+        "-i", str(video_path),
+        "-i", str(audio_path),
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-shortest",
+        str(output_path),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+        if result.returncode != 0:
+            output_path.unlink(missing_ok=True)
+            raise HTTPException(500, (result.stderr or result.stdout or "ffmpeg 合并失败")[-1200:])
+        return {"ok": True, "filename": output_path.name, "name": output_path.stem}
+    except subprocess.TimeoutExpired:
+        output_path.unlink(missing_ok=True)
+        raise HTTPException(500, "合并超时")
+
 
 @app.get("/api/stream/{filename}")
 async def stream_video(filename: str):

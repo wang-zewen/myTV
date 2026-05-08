@@ -1312,7 +1312,7 @@ async def tvbox_emby(request: Request):
                     r = await client.get(
                         f"{url}/Users/{user_id}/Items/{item_id}",
                         headers={"X-Emby-Token": api_key},
-                        params={"Fields": "Overview,ProductionYear,OfficialRating"},
+                        params={"Fields": "Overview,ProductionYear,OfficialRating,People,Genres,Studios"},
                         timeout=10,
                     )
                     r.raise_for_status()
@@ -1322,6 +1322,10 @@ async def tvbox_emby(request: Request):
 
                 has_img = bool((item.get("ImageTags") or {}).get("Primary"))
                 item_type = item.get("Type", "")
+                people = item.get("People") or []
+                actors = [p.get("Name", "") for p in people if p.get("Name") and p.get("Type") in {"Actor", "GuestStar"}]
+                directors = [p.get("Name", "") for p in people if p.get("Name") and p.get("Type") == "Director"]
+                genres = item.get("Genres") or []
 
                 if item_type == "Series":
                     try:
@@ -1351,7 +1355,11 @@ async def tvbox_emby(request: Request):
                     "type_id": 1,
                     "type_name": item_type,
                     "vod_pic": f"{base_url}/api/emby/image/{item_id}?w=320" if has_img else "",
+                    "vod_year": item.get("ProductionYear", ""),
                     "vod_remarks": str(item.get("ProductionYear", "")),
+                    "vod_actor": ",".join(actors[:12]),
+                    "vod_director": ",".join(directors[:4]),
+                    "vod_class": ",".join(genres[:4]),
                     "vod_content": (item.get("Overview") or "")[:500],
                     "vod_time": "",
                     "vod_play_from": "Emby",

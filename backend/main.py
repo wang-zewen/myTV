@@ -503,7 +503,7 @@ async def check_subscription(sub: Subscription):
         sub.last_update = datetime.now().isoformat()
         print(f"[订阅] {sub.vod_name} 发现 {len(new_eps)} 集新内容，开始下载")
         for ep in new_eps:
-            safe_name = re.sub(r'[^\w\u4e00-\u9fff\-]', '_', f"{sub.vod_name}_{ep['name']}")
+            safe_name = re.sub(r'[^\w\u4e00-\u9fff\-]', '_', f"{sub.vod_name}_{ep['name']}")[:200].rstrip('_') or "video"
             # 先标记已知，防止重复触发
             sub.downloaded_episodes.add(ep["name"])
             # 文件已存在则跳过，不重复下载
@@ -684,7 +684,7 @@ async def search_videos(req: SearchRequest):
 async def start_download(req: DownloadRequest):
     task_id = str(uuid.uuid4())
     name = req.name or f"video_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    name = re.sub(r'[^\w\u4e00-\u9fff\-]', '_', name)
+    name = re.sub(r'[^\w\u4e00-\u9fff\-]', '_', name)[:200].rstrip('_') or "video"
     task = TaskStatus(task_id, name, req.url)
     tasks[task_id] = task
     asyncio.create_task(run_download(task_id, req.url, name))
@@ -1315,7 +1315,10 @@ async def emby_cache(item_id: str, req: EmbyCacheRequest):
     api_key = emby_config.get("api_key", "")
     if not url or not api_key:
         raise HTTPException(400, "Emby 未配置")
-    name = re.sub(r'[^\w一-鿿\-]', '_', req.name or f"emby_{item_id[:8]}")
+    raw = req.name or f"emby_{item_id[:8]}"
+    name = re.sub(r'[^\w一-鿿\-]', '_', raw)
+    # 文件名最长 200 字符（留余量给扩展名，且兼容 UTF-8 多字节）
+    name = name[:200].rstrip('_') or f"emby_{item_id[:8]}"
     existing = _find_emby_output_file(name)
     if existing:
         return {"task_id": None, "cached": True,

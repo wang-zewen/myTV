@@ -38,7 +38,7 @@ cp "$SCRIPT_DIR/frontend/index.html" "$INSTALL_DIR/index.html"
 cp "$SCRIPT_DIR/frontend/public.html" "$INSTALL_DIR/public.html"
 
 if [ ! -f "$DATA_FILE" ]; then
-  echo '{"api_sources": [], "subscriptions": {}, "settings": {"check_interval": 3600, "password_hash": ""}}' > "$DATA_FILE"
+  echo '{"api_sources": [], "subscriptions": {}, "settings": {"check_interval": 3600, "password_hash": ""}, "emby_config": {"url": "", "api_key": "", "user_id": "", "password_hash": ""}}' > "$DATA_FILE"
   echo -e "  ${GREEN}首次安装，已创建空配置文件${NC}"
 else
   echo -e "  ${GREEN}检测到已有配置，保留 data.json（接口、订阅不丢失）${NC}"

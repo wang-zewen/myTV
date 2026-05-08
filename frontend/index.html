@@ -261,6 +261,7 @@ input::placeholder{color:var(--muted);}
     <a data-page="subscribe"><span class="icon">⭐</span>追剧订阅<span id="subBadge" class="badge-pill" style="display:none;background:var(--green)">0</span></a>
     <a data-page="tvbox"><span class="icon">📺</span>TVBox 订阅</a>
     <a data-page="manual"><span class="icon">🔗</span>直接下载</a>
+    <a data-page="emby"><span class="icon">🖥</span>Emby 接入</a>
     <a data-page="settings"><span class="icon">⚙</span>系统设置</a>
   </nav>
   <div class="sidebar-footer">
@@ -375,6 +376,55 @@ input::placeholder{color:var(--muted);}
     </div>
   </div>
 
+  <div class="page" id="page-emby">
+    <div class="page-title">Emby 接入</div>
+    <div class="page-sub">配置 Emby 服务器，在公开页面提供受密码保护的 Emby 媒体浏览</div>
+    <div class="card">
+      <div class="slabel">Emby 服务器</div>
+      <div class="form-row">
+        <div class="form-group">
+          <div class="slabel">服务器地址</div>
+          <input id="embyUrl" type="text" placeholder="http://192.168.1.100:8096"/>
+        </div>
+        <div class="form-group">
+          <div class="slabel">API Key</div>
+          <input id="embyApiKey" type="password" placeholder="在 Emby 控制台生成"/>
+        </div>
+      </div>
+      <div class="form-row" style="align-items:flex-end">
+        <div class="form-group">
+          <div class="slabel">用户 ID</div>
+          <input id="embyUserId" type="text" placeholder="自动获取或手动填写"/>
+        </div>
+        <button class="btn btn-ghost" id="embyAutoUserBtn" style="white-space:nowrap">自动获取</button>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:6px">
+        <button class="btn btn-primary" id="saveEmbyBtn">保存配置</button>
+        <button class="btn btn-ghost" id="testEmbyBtn">测试连接</button>
+      </div>
+      <div id="embyTestResult" style="margin-top:10px;font-size:13px;font-family:'DM Mono',monospace;min-height:18px;"></div>
+    </div>
+    <div class="card">
+      <div class="slabel">Emby 区域访问密码</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">在公开页面浏览 Emby 需要输入此密码。留空则任何人均可访问。</p>
+      <div class="form-row">
+        <div class="form-group">
+          <div class="slabel">密码</div>
+          <input id="embyPwd" type="password" placeholder="留空则不需要密码"/>
+        </div>
+        <div class="form-group">
+          <div class="slabel">确认密码</div>
+          <input id="embyPwdConfirm" type="password" placeholder="再次输入"/>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="saveEmbyPwdBtn">保存密码</button>
+    </div>
+    <div class="card" id="embyStatusCard" style="display:none">
+      <div class="slabel">当前状态</div>
+      <div id="embyStatusInfo" style="font-size:13px;color:var(--muted);line-height:1.8"></div>
+    </div>
+  </div>
+
   <div class="page" id="page-settings">
     <div class="page-title">系统设置</div>
     <div class="page-sub">密码保护等全局配置</div>
@@ -421,6 +471,7 @@ function nav(page){
   if(page==='tasks') renderTasks();
   if(page==='tvbox') initTvboxPage();
   if(page==='subscribe') loadSubscriptions();
+  if(page==='emby') loadEmbyConfig();
 }
 // 绑定导航点击
 document.querySelectorAll('#mainNav a').forEach(a=>{
@@ -922,6 +973,78 @@ document.getElementById('savePwdBtn').addEventListener('click',async()=>{
     document.getElementById('newPwd').value='';document.getElementById('confirmPwd').value='';
     sessionStorage.removeItem('sv_authed');
     toast(p1?'密码已设置':'已取消密码保护');
+  } else toast('保存失败','error');
+});
+
+// ── Emby 配置 ──────────────────────────────────────────
+async function loadEmbyConfig(){
+  try{
+    const r=await fetch('/api/emby/config');const c=await r.json();
+    document.getElementById('embyUrl').value=c.url||'';
+    document.getElementById('embyUserId').value=c.user_id||'';
+    if(c.url||c.has_api_key){
+      const card=document.getElementById('embyStatusCard');
+      card.style.display='block';
+      document.getElementById('embyStatusInfo').innerHTML=
+        `服务器：${esc(c.url||'未配置')}<br>`+
+        `API Key：${c.has_api_key?'已设置（已隐藏）':'未设置'}<br>`+
+        `用户 ID：${esc(c.user_id||'未设置')}<br>`+
+        `访问密码：${c.has_password?'已设置':'未设置'}`;
+    }
+  }catch(e){}
+}
+document.getElementById('saveEmbyBtn').addEventListener('click',async()=>{
+  const url=document.getElementById('embyUrl').value.trim();
+  const apiKey=document.getElementById('embyApiKey').value.trim();
+  const userId=document.getElementById('embyUserId').value.trim();
+  if(!url){toast('请填写服务器地址','error');return;}
+  const body={url};
+  if(apiKey) body.api_key=apiKey;
+  body.user_id=userId;
+  const r=await fetch('/api/emby/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.ok){toast('Emby 配置已保存');document.getElementById('embyApiKey').value='';loadEmbyConfig();}
+  else toast('保存失败','error');
+});
+document.getElementById('testEmbyBtn').addEventListener('click',async()=>{
+  const btn=document.getElementById('testEmbyBtn');
+  const res=document.getElementById('embyTestResult');
+  btn.disabled=true;btn.textContent='测试中...';res.textContent='';
+  try{
+    const url=document.getElementById('embyUrl').value.trim();
+    const apiKey=document.getElementById('embyApiKey').value.trim();
+    if(url&&apiKey){
+      const save=await fetch('/api/emby/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,api_key:apiKey})});
+      if(!save.ok){res.textContent='保存临时配置失败';return;}
+    }
+    const r=await fetch('/api/emby/test',{method:'POST'});
+    const d=await r.json();
+    res.style.color=d.ok?'var(--green)':'var(--red)';
+    res.textContent=d.ok?`✓ ${d.msg}`:`✗ ${d.error}`;
+  }finally{btn.disabled=false;btn.textContent='测试连接';}
+});
+document.getElementById('embyAutoUserBtn').addEventListener('click',async()=>{
+  const btn=document.getElementById('embyAutoUserBtn');
+  btn.disabled=true;btn.textContent='获取中...';
+  try{
+    const r=await fetch('/api/emby/users');
+    if(!r.ok){const d=await r.json();toast(d.detail||'获取失败','error');return;}
+    const users=await r.json();
+    if(!users.length){toast('未找到用户','error');return;}
+    document.getElementById('embyUserId').value=users[0].id;
+    toast(`已获取用户：${users[0].name}`);
+  }catch(e){toast('获取失败','error');}
+  finally{btn.disabled=false;btn.textContent='自动获取';}
+});
+document.getElementById('saveEmbyPwdBtn').addEventListener('click',async()=>{
+  const p1=document.getElementById('embyPwd').value;
+  const p2=document.getElementById('embyPwdConfirm').value;
+  if(p1!==p2){toast('两次密码不一致','error');return;}
+  const r=await fetch('/api/emby/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:p1})});
+  if(r.ok){
+    document.getElementById('embyPwd').value='';document.getElementById('embyPwdConfirm').value='';
+    sessionStorage.removeItem('sv_emby_authed');
+    toast(p1?'Emby 密码已设置':'已取消 Emby 密码保护');
+    loadEmbyConfig();
   } else toast('保存失败','error');
 });
 

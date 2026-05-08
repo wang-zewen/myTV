@@ -41,6 +41,7 @@ tasks: dict = {}          # 下载任务
 api_sources: list = []    # 采集站接口
 subscriptions: dict = {}  # 订阅列表 {sub_id: Subscription}
 settings: dict = {"check_interval": 3600, "password_hash": ""}  # 全局设置，password_hash 为空时不需要认证
+emby_config: dict = {"url": "", "api_key": "", "user_id": "", "password_hash": ""}
 _download_semaphore: Optional[asyncio.Semaphore] = None
 
 
@@ -50,6 +51,7 @@ def save_data():
     data = {
         "api_sources": api_sources,
         "settings": settings,
+        "emby_config": emby_config,
         "subscriptions": {
             sid: {
                 "sub_id": s.sub_id,
@@ -83,6 +85,10 @@ def load_data():
         api_sources.clear()
         api_sources.extend(data.get("api_sources", []))
         settings.update(data.get("settings", {}))
+        saved_ec = data.get("emby_config", {})
+        for k in emby_config:
+            if k in saved_ec:
+                emby_config[k] = saved_ec[k]
         for sid, d in data.get("subscriptions", {}).items():
             s = Subscription.__new__(Subscription)
             s.sub_id = d["sub_id"]
@@ -123,6 +129,9 @@ class SubscribeRequest(BaseModel):
     source_name: str
     vod_pic: Optional[str] = ""
     download_existing: bool = False  # True=补全已有集，False=只追新集
+
+class EmbyCacheRequest(BaseModel):
+    name: Optional[str] = None
 
 
 # ─── Task ──────────────────────────────────────────────
@@ -1057,3 +1066,259 @@ async def tvbox_config(request: Request):
 
 
 app.mount("/videos", StaticFiles(directory=str(VIDEO_DIR)), name="videos")
+
+
+# ── Emby 集成 ──────────────────────────────────────────
+
+async def _emby_stream_download(task_id: str, stream_url: str, output_name: str):
+    """通过 httpx 流式下载 Emby 视频文件（API Key 留在服务端）"""
+    task = tasks[task_id]
+    out_path: Optional[Path] = None
+    try:
+        timeout = httpx.Timeout(connect=30, read=None, write=None, pool=30)
+        async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
+            async with client.stream("GET", stream_url) as r:
+                r.raise_for_status()
+                # 从 Content-Disposition 或 Content-Type 推断扩展名
+                ext = ".mp4"
+                cd = r.headers.get("content-disposition", "")
+                ct = r.headers.get("content-type", "").split(";")[0].strip()
+                if cd and "filename" in cd:
+                    m = re.search(r'filename[*]?=["\']?(?:UTF-8\'\')?([^"\';\r\n]+)', cd)
+                    if m:
+                        g = Path(m.group(1).strip().strip('"').strip("'")).suffix.lower()
+                        if g in _VIDEO_EXTS:
+                            ext = g
+                elif ct == "video/x-matroska":
+                    ext = ".mkv"
+                out_path = VIDEO_DIR / f"{output_name}{ext}"
+                total = int(r.headers.get("content-length", 0) or 0)
+                downloaded = 0
+                task.log_lines.append(
+                    f"[Emby缓存] 开始下载{f'，总大小 {total//1024//1024} MB' if total else ''}...")
+                with open(out_path, "wb") as f:
+                    async for chunk in r.aiter_bytes(chunk_size=256 * 1024):
+                        while task.status == "paused":
+                            await asyncio.sleep(1)
+                        if task.status == "cancelled":
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total:
+                            task.progress = round(downloaded / total * 100, 1)
+                        mb = downloaded // 1024 // 1024
+                        if mb > 0 and (downloaded % (10 * 1024 * 1024)) < (256 * 1024):
+                            line = f"[进度] {task.progress:.1f}% - {mb} MB"
+                            if total:
+                                line += f" / {total//1024//1024} MB"
+                            task.log_lines.append(line)
+                if task.status == "cancelled":
+                    try:
+                        out_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    return
+        task.status = "done"
+        task.progress = 100
+        size_mb = out_path.stat().st_size / 1024 / 1024
+        task.log_lines.append(f"[完成] {out_path.name}（{size_mb:.1f} MB）")
+    except Exception as e:
+        task.status = "error"
+        task.error = str(e)
+        task.log_lines.append(f"[错误] {e}")
+        if out_path and out_path.exists():
+            try:
+                out_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+
+@app.get("/api/emby/status")
+async def emby_status():
+    return {
+        "configured": bool(emby_config.get("url") and emby_config.get("api_key")),
+        "need_auth": bool(emby_config.get("password_hash", "")),
+    }
+
+
+@app.post("/api/emby/auth")
+async def emby_auth(data: dict):
+    pw_hash = emby_config.get("password_hash", "")
+    if not pw_hash:
+        return {"ok": True}
+    if hashlib.sha256(data.get("password", "").encode()).hexdigest() != pw_hash:
+        raise HTTPException(401, "密码错误")
+    return {"ok": True}
+
+
+@app.get("/api/emby/config")
+async def get_emby_config():
+    return {
+        "url": emby_config.get("url", ""),
+        "user_id": emby_config.get("user_id", ""),
+        "has_api_key": bool(emby_config.get("api_key", "")),
+        "has_password": bool(emby_config.get("password_hash", "")),
+    }
+
+
+@app.put("/api/emby/config")
+async def set_emby_config(data: dict):
+    if "url" in data:
+        emby_config["url"] = data["url"].rstrip("/")
+    if data.get("api_key"):
+        emby_config["api_key"] = data["api_key"]
+    if "user_id" in data:
+        emby_config["user_id"] = data["user_id"]
+    if "password" in data:
+        pw = data["password"].strip()
+        emby_config["password_hash"] = hashlib.sha256(pw.encode()).hexdigest() if pw else ""
+    save_data()
+    return {"ok": True}
+
+
+@app.post("/api/emby/test")
+async def test_emby():
+    url = emby_config.get("url", "")
+    api_key = emby_config.get("api_key", "")
+    if not url or not api_key:
+        return {"ok": False, "error": "请先填写服务器地址和 API Key"}
+    try:
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            r = await client.get(f"{url}/System/Info/Public",
+                                 headers={"X-Emby-Token": api_key}, timeout=8)
+            r.raise_for_status()
+            info = r.json()
+            return {"ok": True, "msg": f"连接成功：{info.get('ServerName', 'Emby')} v{info.get('Version', '?')}"}
+    except httpx.TimeoutException:
+        return {"ok": False, "error": "连接超时（8s）"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/emby/users")
+async def emby_users():
+    url = emby_config.get("url", "")
+    api_key = emby_config.get("api_key", "")
+    if not url or not api_key:
+        raise HTTPException(400, "Emby 未配置")
+    try:
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            r = await client.get(f"{url}/Users",
+                                 headers={"X-Emby-Token": api_key}, timeout=10)
+            r.raise_for_status()
+            return [{"id": u["Id"], "name": u["Name"]} for u in r.json()]
+    except Exception as e:
+        raise HTTPException(502, str(e))
+
+
+@app.get("/api/emby/libraries")
+async def emby_libraries():
+    url = emby_config.get("url", "")
+    api_key = emby_config.get("api_key", "")
+    user_id = emby_config.get("user_id", "")
+    if not url or not api_key:
+        raise HTTPException(400, "Emby 未配置")
+    try:
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            r = await client.get(f"{url}/Users/{user_id}/Views",
+                                 headers={"X-Emby-Token": api_key}, timeout=10)
+            r.raise_for_status()
+            return [{"id": i["Id"], "name": i["Name"]}
+                    for i in r.json().get("Items", [])]
+    except Exception as e:
+        raise HTTPException(502, str(e))
+
+
+@app.get("/api/emby/items")
+async def emby_items(parent_id: str = "", pg: int = 1, limit: int = 40):
+    url = emby_config.get("url", "")
+    api_key = emby_config.get("api_key", "")
+    user_id = emby_config.get("user_id", "")
+    if not url or not api_key:
+        raise HTTPException(400, "Emby 未配置")
+    try:
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            params = {
+                "IncludeItemTypes": "Movie,Series",
+                "Recursive": "true",
+                "Fields": "PrimaryImageAspectRatio,Overview,ProductionYear,OfficialRating",
+                "StartIndex": (pg - 1) * limit,
+                "Limit": limit,
+                "SortBy": "SortName",
+                "SortOrder": "Ascending",
+            }
+            if parent_id:
+                params["ParentId"] = parent_id
+            r = await client.get(f"{url}/Users/{user_id}/Items",
+                                 headers={"X-Emby-Token": api_key},
+                                 params=params, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            items = []
+            for i in data.get("Items", []):
+                has_img = bool((i.get("ImageTags") or {}).get("Primary"))
+                thumb = (f"{url}/Items/{i['Id']}/Images/Primary"
+                         f"?api_key={api_key}&maxWidth=300&quality=90") if has_img else ""
+                items.append({
+                    "id": i["Id"],
+                    "name": i["Name"],
+                    "type": i["Type"],
+                    "year": i.get("ProductionYear", ""),
+                    "overview": (i.get("Overview") or "")[:200],
+                    "thumb": thumb,
+                    "rating": i.get("OfficialRating", ""),
+                })
+            return {"items": items, "total": data.get("TotalRecordCount", 0), "page": pg}
+    except Exception as e:
+        raise HTTPException(502, str(e))
+
+
+@app.get("/api/emby/episodes/{series_id}")
+async def emby_episodes(series_id: str):
+    url = emby_config.get("url", "")
+    api_key = emby_config.get("api_key", "")
+    user_id = emby_config.get("user_id", "")
+    if not url or not api_key:
+        raise HTTPException(400, "Emby 未配置")
+    try:
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            r = await client.get(f"{url}/Shows/{series_id}/Episodes",
+                                 headers={"X-Emby-Token": api_key},
+                                 params={"UserId": user_id, "Fields": "Overview", "Limit": 500},
+                                 timeout=10)
+            r.raise_for_status()
+            return [{"id": i["Id"], "name": i.get("Name", ""),
+                     "season": i.get("ParentIndexNumber", 1),
+                     "episode": i.get("IndexNumber", 0)}
+                    for i in r.json().get("Items", [])]
+    except Exception as e:
+        raise HTTPException(502, str(e))
+
+
+@app.post("/api/emby/cache/{item_id}")
+async def emby_cache(item_id: str, req: EmbyCacheRequest):
+    url = emby_config.get("url", "")
+    api_key = emby_config.get("api_key", "")
+    if not url or not api_key:
+        raise HTTPException(400, "Emby 未配置")
+    name = re.sub(r'[^\w一-鿿\-]', '_', req.name or f"emby_{item_id[:8]}")
+    existing = _find_output_file(name)
+    if existing:
+        return {"task_id": None, "cached": True,
+                "filename": existing.name, "url": f"/api/stream/{existing.name}"}
+    stream_url = f"{url}/Items/{item_id}/Download?api_key={api_key}"
+    task_id = str(uuid.uuid4())
+    task = TaskStatus(task_id, name, stream_url, source="emby")
+    task.log_lines.append("[Emby] 准备缓存下载...")
+    tasks[task_id] = task
+    asyncio.create_task(_emby_stream_download(task_id, stream_url, name))
+    return {"task_id": task_id, "cached": False}
+
+
+@app.get("/api/emby/direct/{item_id}")
+async def emby_direct(item_id: str):
+    url = emby_config.get("url", "")
+    api_key = emby_config.get("api_key", "")
+    if not url or not api_key:
+        raise HTTPException(400, "Emby 未配置")
+    return {"url": f"{url}/Videos/{item_id}/stream?api_key={api_key}&static=true"}

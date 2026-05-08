@@ -573,12 +573,15 @@ async function openEmbyPerson(personId, personName){
 
 function _renderEmbyPersonHeader(){
   const label=curEmbyPerson?.name||'演员';
-  const backBtn=curEmbyItem?`<button class="back-btn" style="padding:6px 12px;font-size:12px" onclick="returnToEmbyDetail()">← 返回详情</button>`:'';
+  const backBtn=curEmbyItem?`<button class="back-btn" style="padding:6px 12px;font-size:12px" onclick="returnToEmbyDetail()">← 返回当前影片</button>`:'';
   $('secHd').innerHTML=`<div class="sec-hd">${backBtn}<span class="sec-title">${esc(label)}</span>${embyTotal?`<span class="sec-count">${esc(String(embyTotal))} 个</span>`:''}</div>`;
 }
 
 function returnToEmbyDetail(){
-  if(curEmbyItem) openEmbyDetail(curEmbyItem);
+  if(curEmbyItem){
+    showDetail();
+    openEmbyDetail(curEmbyItem);
+  }
 }
 
 async function loadEmbyPersonItems(personId, pg){

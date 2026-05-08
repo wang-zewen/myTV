@@ -1699,7 +1699,7 @@ async def emby_image(item_id: str, w: int = 200):
 
 @app.api_route("/api/emby/stream/{item_id}", methods=["GET", "HEAD"])
 async def emby_stream(item_id: str, request: Request):
-    """Reverse-proxy Emby stream so TVBox does not need to follow redirects or reach Emby directly."""
+    """Reverse-proxy Emby stream for TVBox compatibility."""
     url = emby_config.get("url", "")
     api_key = emby_config.get("api_key", "")
     if not url or not api_key:
@@ -1707,28 +1707,37 @@ async def emby_stream(item_id: str, request: Request):
 
     upstream_url = f"{url}/Videos/{item_id}/stream?api_key={api_key}&static=true"
     headers = {}
-    range_header = request.headers.get("range")
+    range_header = request.headers.get("range") or request.headers.get("Range")
     if range_header:
         headers["Range"] = range_header
 
     try:
         async with _make_http_client() as client:
-            upstream = await client.get(upstream_url, headers=headers, timeout=None)
-            upstream.raise_for_status()
+            if request.method == "HEAD":
+                upstream = await client.head(upstream_url, headers=headers, timeout=20)
+                passthrough_headers = {}
+                for key in ["content-type", "content-length", "accept-ranges", "content-range", "cache-control", "etag", "last-modified", "content-disposition"]:
+                    if key in upstream.headers:
+                        passthrough_headers[key] = upstream.headers[key]
+                return Response(status_code=upstream.status_code, headers=passthrough_headers)
+
+            upstream = await client.stream("GET", upstream_url, headers=headers, timeout=None)
+            await upstream.__aenter__()
 
             passthrough_headers = {}
-            for key in [
-                "content-type", "content-length", "accept-ranges", "content-range",
-                "cache-control", "etag", "last-modified", "content-disposition"
-            ]:
+            for key in ["content-type", "content-length", "accept-ranges", "content-range", "cache-control", "etag", "last-modified", "content-disposition"]:
                 if key in upstream.headers:
                     passthrough_headers[key] = upstream.headers[key]
 
-            if request.method == "HEAD":
-                return Response(status_code=upstream.status_code, headers=passthrough_headers)
+            async def body_iter():
+                try:
+                    async for chunk in upstream.aiter_bytes():
+                        yield chunk
+                finally:
+                    await upstream.aclose()
 
-            return Response(
-                content=upstream.content,
+            return StreamingResponse(
+                body_iter(),
                 status_code=upstream.status_code,
                 headers=passthrough_headers,
                 media_type=upstream.headers.get("content-type", "video/mp4"),

@@ -131,6 +131,7 @@ def load_data():
 class DownloadRequest(BaseModel):
     url: str
     name: Optional[str] = None
+    media_type: Optional[str] = "video"  # video | audio
 
 class ApiSource(BaseModel):
     name: str
@@ -160,7 +161,7 @@ MIN_FILE_SIZE = 1024     # 完整性校验：文件至少 1KB，否则视为损�
 
 
 class TaskStatus:
-    def __init__(self, task_id, name, url, source="manual"):
+    def __init__(self, task_id, name, url, source="manual", media_type="video"):
         self.task_id = task_id
         self.name = name
         self.url = url
@@ -172,9 +173,14 @@ class TaskStatus:
         self.process = None
         self.retries = 0
         self.source = source          # manual | subscribe（来源标记）
+        self.media_type = media_type  # video | audio
 
 
 _VIDEO_EXTS = {".mp4", ".mkv", ".ts", ".m4v", ".m2ts", ".mpeg"}
+_AUDIO_ONLY_EXTS = {".m4a", ".mp3", ".aac", ".flac", ".wav", ".opus", ".ogg"}
+# .webm can be video or audio-only; include in both discovery sets
+_AUDIO_EXTS = _AUDIO_ONLY_EXTS | {".webm"}
+_ALL_MEDIA_EXTS = _VIDEO_EXTS | _AUDIO_EXTS
 
 def _safe_filename(name: str, max_bytes: int = 200) -> str:
     """按字节截断文件名（保证 UTF-8 多字节字符不被截断到中间）。
@@ -189,15 +195,15 @@ def _safe_filename(name: str, max_bytes: int = 200) -> str:
 def _find_output_file(output_name: str):
     """查找下载完成后的输出文件。
     N_m3u8DL-RE 可能附加语言/分辨率标签（如 name.zh.mp4），
-    所以先精确匹配，再做前缀 glob，取最大的视频文件。
+    所以先精确匹配，再做前缀 glob，取最大的媒体文件（视频优先）。
     """
-    for ext in _VIDEO_EXTS:
+    for ext in (*_VIDEO_EXTS, *_AUDIO_EXTS):
         p = VIDEO_DIR / f"{output_name}{ext}"
         if p.exists():
             return p
     candidates = [
         p for p in VIDEO_DIR.glob(f"{output_name}*")
-        if p.suffix.lower() in _VIDEO_EXTS
+        if p.suffix.lower() in _ALL_MEDIA_EXTS
     ]
     return max(candidates, key=lambda p: p.stat().st_size) if candidates else None
 
@@ -208,28 +214,41 @@ def _verify_file(path: Path) -> tuple:
     校验文件完整性。
     返回 (ok: bool, reason: str)
     - 文件存在且大于最小尺寸视为完整
-    - m3u8 下载的 mp4 用 ffprobe 做格式校验（如果有的话）
+    - 用 ffprobe 做格式校验：纯音频文件检查 a:0，视频文件检查 v:0，
+      .webm 接受 v:0 或 a:0 任一存在。
     """
     if not path.exists():
         return False, "文件不存在"
     size = path.stat().st_size
     if size < MIN_FILE_SIZE:
         return False, f"文件过小（{size} 字节），可能已损坏"
-    # 尝试用 ffprobe 校验容器完整性
     ffprobe = shutil.which("ffprobe")
     if ffprobe:
         import subprocess
-        result = subprocess.run(
-            [ffprobe, "-v", "error", "-select_streams", "v:0",
-             "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(path)],
-            capture_output=True, text=True, timeout=30
-        )
-        if result.returncode != 0 or not result.stdout.strip():
-            return False, "ffprobe 校验失败，视频流可能损坏"
+        suffix = path.suffix.lower()
+
+        def _probe(stream_sel: str) -> bool:
+            r = subprocess.run(
+                [ffprobe, "-v", "error", "-select_streams", stream_sel,
+                 "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(path)],
+                capture_output=True, text=True, timeout=30,
+            )
+            return r.returncode == 0 and bool(r.stdout.strip())
+
+        if suffix in _AUDIO_ONLY_EXTS:
+            if not _probe("a:0"):
+                return False, "ffprobe 校验失败，音频流可能损坏"
+        elif suffix == ".webm":
+            # webm 可能是视频或纯音频，任一流存在即视为有效
+            if not (_probe("v:0") or _probe("a:0")):
+                return False, "ffprobe 校验失败，未找到有效音视频流"
+        else:
+            if not _probe("v:0"):
+                return False, "ffprobe 校验失败，视频流可能损坏"
     return True, "ok"
 
 
-async def run_download(task_id: str, url: str, output_name: str):
+async def run_download(task_id: str, url: str, output_name: str, media_type: str = "video"):
     """并发限流入口，实际下载逻辑在 _run_download_core"""
     task = tasks[task_id]
     sem = _download_semaphore
@@ -242,12 +261,12 @@ async def run_download(task_id: str, url: str, output_name: str):
             if task.status == "queued":
                 task.status = "downloading"
                 task.log_lines.append("[开始] 已获得下载槽")
-            await _run_download_core(task_id, url, output_name)
+            await _run_download_core(task_id, url, output_name, media_type)
     else:
-        await _run_download_core(task_id, url, output_name)
+        await _run_download_core(task_id, url, output_name, media_type)
 
 
-async def _run_download_core(task_id: str, url: str, output_name: str):
+async def _run_download_core(task_id: str, url: str, output_name: str, media_type: str = "video"):
     task = tasks[task_id]
 
     while task.retries <= MAX_RETRIES:
@@ -281,13 +300,25 @@ async def _run_download_core(task_id: str, url: str, output_name: str):
                 ]
             elif Path(ytdlp).exists():
                 out_template = str(VIDEO_DIR / f"{output_name}.%(ext)s")
-                cmd = [
-                    ytdlp, url,
-                    "--hls-prefer-native",
-                    "--no-part",
-                    "-o", out_template,
-                    "--newline",
-                ]
+                if media_type == "audio":
+                    cmd = [
+                        ytdlp, url,
+                        "-f", "bestaudio/best",
+                        "--extract-audio",
+                        "--audio-format", "m4a",
+                        "--audio-quality", "0",
+                        "--no-part",
+                        "-o", out_template,
+                        "--newline",
+                    ]
+                else:
+                    cmd = [
+                        ytdlp, url,
+                        "--hls-prefer-native",
+                        "--no-part",
+                        "-o", out_template,
+                        "--newline",
+                    ]
             elif ffmpeg:
                 out_path = VIDEO_DIR / f"{output_name}.mp4"
                 cmd = [
@@ -794,7 +825,7 @@ async def get_task(task_id: str):
 async def list_tasks():
     return [{"task_id": t.task_id, "name": t.name, "status": t.status,
              "progress": t.progress, "error": t.error, "created_at": t.created_at,
-             "source": t.source}
+             "source": t.source, "media_type": getattr(t, 'media_type', 'video')}
             for t in tasks.values()]
 
 @app.delete("/api/tasks/{task_id}")
@@ -841,6 +872,22 @@ async def list_videos():
             "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
             "url": f"/api/stream/{f.name}"})
     return videos
+
+@app.get("/api/videos/files")
+async def list_all_files():
+    files = []
+    try:
+        entries = sorted(VIDEO_DIR.iterdir(), key=lambda x: x.stat().st_ctime, reverse=True)
+    except OSError:
+        return []
+    for f in entries:
+        if not f.is_file() or f.name.startswith('.'):
+            continue
+        try:
+            files.append({"filename": f.name, "size_mb": round(f.stat().st_size / 1024 / 1024, 2)})
+        except OSError:
+            continue
+    return files
 
 @app.delete("/api/videos/{filename}")
 async def delete_video(filename: str):

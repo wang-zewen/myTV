@@ -389,7 +389,7 @@ input::placeholder{color:var(--muted);}
     <div class="page-title">视频库</div>
     <div class="page-sub">已下载到服务器的视频</div>
     <div style="display:flex;justify-content:flex-end;margin:-8px 0 16px 0">
-      <button class="btn btn-ghost btn-sm" id="mergeMediaBtn">🎞 合并音视频</button>
+      <button class="btn btn-ghost btn-sm" id="mergeMediaBtn">🎞 选择文件并合并音视频</button>
     </div>
     <div id="diskspaceBar" style="margin-bottom:16px;display:none">
       <div style="display:flex;justify-content:space-between;font-family:'DM Mono',monospace;font-size:12px;color:var(--muted);margin-bottom:6px">
@@ -466,16 +466,23 @@ input::placeholder{color:var(--muted);}
 
   <div class="page" id="page-manual">
     <div class="page-title">直接下载</div>
-    <div class="page-sub">已知 M3U8 链接时直接粘贴下载</div>
+    <div class="page-sub">已知链接时直接下载，可选择视频或纯音频</div>
     <div class="card">
       <div class="form-row">
         <div class="form-group">
-          <div class="slabel">M3U8 链接</div>
-          <input id="manualUrl" type="text" placeholder="https://example.com/video.m3u8"/>
+          <div class="slabel">媒体链接</div>
+          <input id="manualUrl" type="text" placeholder="https://example.com/video.m3u8 或 YouTube 链接"/>
+        </div>
+        <div class="form-group" style="max-width:160px">
+          <div class="slabel">下载类型</div>
+          <select id="manualMediaType">
+            <option value="video" selected>视频</option>
+            <option value="audio">音频</option>
+          </select>
         </div>
         <div class="form-group" style="max-width:220px">
           <div class="slabel">保存名称（可选）</div>
-          <input id="manualName" type="text" placeholder="我的视频"/>
+          <input id="manualName" type="text" placeholder="我的媒体"/>
         </div>
       </div>
       <button class="btn btn-primary" id="manualDownloadBtn">⬇ 开始下载</button>
@@ -828,8 +835,9 @@ async function downloadEpisode(url,name){await startDownload(url,name);nav('task
 document.getElementById('manualDownloadBtn').addEventListener('click',async()=>{
   const url=document.getElementById('manualUrl').value.trim();
   const name=document.getElementById('manualName').value.trim();
+  const mediaType=document.getElementById('manualMediaType').value;
   if(!url){toast('请输入链接','error');return;}
-  await startDownload(url,name||undefined);
+  await startDownload(url,name||undefined,mediaType);
   document.getElementById('manualUrl').value='';document.getElementById('manualName').value='';
   nav('tasks');
 });

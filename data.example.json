@@ -1,0 +1,72 @@
+{
+  "api_sources": [
+    {
+      "name": "无尽-老杨",
+      "url": "https://api.wujinapi.com/api.php/provide/vod",
+      "enabled": true,
+      "tvbox_enabled": true
+    },
+    {
+      "name": "茅台",
+      "url": "https://caiji.maotaizy.cc/api.php/provide/vod",
+      "enabled": true,
+      "tvbox_enabled": true
+    },
+    {
+      "name": "最大资源网",
+      "url": "https://api.zuidapi.com/api.php/provide/vod",
+      "enabled": true,
+      "tvbox_enabled": true
+    },
+    {
+      "name": "淘片片",
+      "url": "https://taopianapi.com/cjapi/mc/vod/json.html",
+      "enabled": true,
+      "tvbox_enabled": true
+    },
+    {
+      "name": "u酷-胖娃",
+      "url": "https://api.ukuapi88.com/api.php/provide/vod",
+      "enabled": true,
+      "tvbox_enabled": true
+    },
+    {
+      "name": "宝岛-真胖",
+      "url": "https://api.apibdzy.com/api.php/provide/vod",
+      "enabled": true,
+      "tvbox_enabled": true
+    }
+  ],
+  "settings": {
+    "check_interval": 3600,
+    "password_hash": "*",
+    "tvbox_local_enabled": true,
+    "tvbox_emby_enabled": false
+  },
+  "emby_config": {
+    "url": "http://your-emby-host:8096",
+    "api_key": "*",
+    "user_id": "*",
+    "password_hash": "*"
+  },
+  "subscriptions": {
+    "example-subscription-id": {
+      "sub_id": "example-subscription-id",
+      "vod_name": "低智商犯罪",
+      "vod_id": "160340",
+      "source_url": "https://api.wujinapi.com/api.php/provide/vod",
+      "source_name": "无尽-老杨",
+      "vod_pic": "https://example.com/poster.jpg",
+      "added_at": "2026-05-08T21:15:08.108802",
+      "last_checked": "2026-05-09T02:34:51.339121",
+      "last_episode_count": 13,
+      "downloaded_episodes": [
+        "第01集",
+        "第02集",
+        "第03集"
+      ],
+      "status": "active",
+      "last_update": ""
+    }
+  }
+}

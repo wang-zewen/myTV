@@ -197,11 +197,17 @@ button{cursor:pointer;font-family:inherit;}
     </div>
     <div class="player-box">
       <video id="player" controls playsinline></video>
+      <button id="centerPlayBtn" class="center-play-btn hidden" onclick="playCurrentVideo()">▶</button>
       <div id="playerLoading" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:rgba(255,255,255,.72);color:var(--fg2);font-size:13px;z-index:2;">
         <div style="width:28px;height:28px;border:3px solid rgba(255,255,255,.18);border-top-color:var(--acc2);border-radius:50%;animation:spin 1s linear infinite;"></div>
         <span id="playerLoadingText">正在加载播放...</span>
       </div>
       <div class="player-err" id="playerErr"><span style="font-size:36px">⚠️</span><span id="playerErrMsg">播放失败</span></div>
+    </div>
+    <div class="player-actions-row">
+      <button id="primaryPlayBtn" class="secondary-play-btn" onclick="playCurrentVideo()">▶ 播放</button>
+      <button id="prevVideoBtn" class="nav-video-btn" onclick="playAdjacentVideo(-1)">← 上一个</button>
+      <button id="nextVideoBtn" class="nav-video-btn" onclick="playAdjacentVideo(1)">下一个 →</button>
     </div>
     <div class="dv-body">
       <div class="dv-title" id="dvTitle"></div>
@@ -237,6 +243,8 @@ let curEmbyPerson=null;
 let _embyBrowseRestore=null;
 let _embyCurPeople=[];
 let _browseScrollY=0;
+let _currentPlayable=null;
+let _currentPlayableIndex=-1;
 
 // ── init ──────────────────────────────────────────────────────
 async function init(){
@@ -256,7 +264,7 @@ function renderSrcBar(){
 
 // ── local videos ───────────────────────────────────────────────
 async function selectLocal(){
-  curSrc=LOCAL; isLocal=true; isSearch=false;
+  curSrc=LOCAL; isLocal=true; isSearch=false; _setCurrentPlayable(null,-1);
   $('q').value='';
   renderSrcBar();
   $('catOuter').style.display='none';
@@ -291,7 +299,7 @@ function localCard(v,i){
 
 // ── CMS source ─────────────────────────────────────────────────
 async function selectSrc(idx){
-  curSrc=sources[idx].url; curCat=0; page=1; isSearch=false; isLocal=false;
+  curSrc=sources[idx].url; curCat=0; page=1; isSearch=false; isLocal=false; _setCurrentPlayable(null,-1);
   $('q').value='';
   renderSrcBar();
   showBrowse();
@@ -401,7 +409,7 @@ $('embyPwdBtn').addEventListener('click',doEmbyAuth);
 $('embyPwdInput').addEventListener('keydown',e=>{if(e.key==='Enter')doEmbyAuth();});
 
 async function _openEmby(){
-  curSrc=EMBY;isEmby=true;isLocal=false;isSearch=false;curEmbyPerson=null;
+  curSrc=EMBY;isEmby=true;isLocal=false;isSearch=false;curEmbyPerson=null; _setCurrentPlayable(null,-1);
   $('q').value='';
   renderSrcBar();
   showBrowse();
@@ -480,6 +488,28 @@ function embyCard(v,i){
 
 function _clearPeopleChips(){const el=document.getElementById('dvPeopleChips');if(el)el.remove();}
 
+function _setCurrentPlayable(payload,index=-1){
+  _currentPlayable=payload;
+  _currentPlayableIndex=index;
+  const hasPlayable=!!payload;
+  const pp=$('primaryPlayBtn'), cp=$('centerPlayBtn'), prev=$('prevVideoBtn'), next=$('nextVideoBtn');
+  if(pp) pp.style.display=hasPlayable?'inline-flex':'none';
+  if(cp) cp.classList.toggle('hidden', !hasPlayable);
+  if(prev) prev.disabled=!(index>0);
+  if(next) next.disabled=!(index>=0 && index<vodArr.length-1);
+}
+function playCurrentVideo(){
+  if(!_currentPlayable) return;
+  if(_currentPlayable.kind==='emby-movie') embyDirectPlay(_currentPlayable.id);
+  else if(_currentPlayable.kind==='local') startPlay($('player'), _currentPlayable.url);
+  else if(_currentPlayable.kind==='cms-episode') playEp(_currentPlayable.index);
+}
+async function playAdjacentVideo(step){
+  const ni=_currentPlayableIndex+step;
+  if(ni<0 || ni>=vodArr.length) return;
+  await openDetail(ni);
+}
+
 async function openEmbyDetail(v){
   curEmbyItem=v;
   _clearPeopleChips();
@@ -517,6 +547,7 @@ async function openEmbyDetail(v){
     }
   }catch(e){}
   if(v.type==='Series'){
+    _setCurrentPlayable(null, vodArr.findIndex(x=>x && x.id===v.id));
     $('epSection').style.display='block';
     $('epTotal').textContent='加载中...';
     $('epGrid').innerHTML='';
@@ -532,6 +563,7 @@ async function openEmbyDetail(v){
     }catch(e){$('epGrid').innerHTML='<span style="color:#f87171;font-size:12px">加载失败</span>';}
   } else {
     $('embyActions').style.display='block';
+    _setCurrentPlayable({kind:'emby-movie',id:v.id}, vodArr.findIndex(x=>x && x.id===v.id));
     $('embyDirectBtn').onclick=()=>embyDirectPlay(v.id);
   }
 }
@@ -654,6 +686,7 @@ async function openDetail(idx){
   const v=vodArr[idx];if(!v)return;
   if(v.__emby){
     $('embyActions').style.display='none';
+    _currentPlayableIndex=idx;
     await openEmbyDetail(v);
     return;
   }
@@ -666,6 +699,7 @@ async function openDetail(idx){
     $('dvDesc').textContent='';
     $('epSection').style.display='none';
     stopPlayer();
+    _setCurrentPlayable({kind:'local',url:v.url}, idx);
     startPlay($('player'),v.url);
     return;
   }
@@ -696,7 +730,7 @@ async function openDetail(idx){
     $('epGrid').innerHTML=epArr.length
       ?epArr.map((e,i)=>`<button class="ep" id="ep${i}" onclick="playEp(${i})">${esc(e.name)}</button>`).join('')
       :'<span style="color:var(--dim);font-size:12px">暂无剧集信息</span>';
-    if(epArr.length)playEp(0);
+    if(epArr.length){ _setCurrentPlayable({kind:'cms-episode',index:0}, idx); playEp(0); } else { _setCurrentPlayable(null, idx); }
   }catch(e){$('dvMeta').textContent='加载失败';}
 }
 
@@ -713,6 +747,7 @@ function parseEps(f,u){
 function playEp(idx){
   document.querySelectorAll('.ep').forEach((b,i)=>b.classList.toggle('on',i===idx));
   const ep=epArr[idx];if(!ep)return;
+  _setCurrentPlayable({kind:'cms-episode',index:idx}, _currentPlayableIndex);
   startPlay($('player'),ep.url);
   document.getElementById('ep'+idx)?.scrollIntoView({block:'nearest',inline:'center'});
 }

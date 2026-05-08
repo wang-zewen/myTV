@@ -343,7 +343,10 @@ input::placeholder{color:var(--muted);}
         <button class="btn btn-primary" id="addSourceBtn">+ 添加</button>
       </div>
     </div>
-    <div class="slabel">已配置接口</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+      <div class="slabel" style="margin-bottom:0">已配置接口</div>
+      <button class="btn btn-ghost btn-sm" id="testAllSourcesBtn">🧪 全部测试</button>
+    </div>
     <div id="sourcesList"></div>
   </div>
 
@@ -582,9 +585,50 @@ document.getElementById('loginPwd').addEventListener('keydown',e=>{if(e.key==='E
 // ── 接口管理 ──────────────────────────────────────────
 let sources=[];
 async function loadSources(){
-  const r=await fetch('/api/sources');sources=await r.json();
+  const r=await fetch('/api/sources');
+  const fresh=await r.json();
+  const prev=new Map(sources.map(s=>[`${s.name}@@${s.url}`, s]));
+  sources=fresh.map(s=>{
+    const old=prev.get(`${s.name}@@${s.url}`)||{};
+    return {...s, _testState: old._testState||'idle', _testMsg: old._testMsg||''};
+  });
   document.getElementById('sourceCount').textContent=sources.length;
   renderSources();
+}
+
+async function testSourceAt(i, btn=null){
+  const s=sources[i];
+  if(!s) return {ok:false,error:'接口不存在'};
+  s._testState='testing';
+  s._testMsg='';
+  renderSources();
+  if(btn){btn.textContent='测试中...';btn.disabled=true;}
+  try{
+    const r=await fetch('/api/sources/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:s.name,url:s.url})});
+    const d=await r.json();
+    s._testState=d.ok?'ok':'fail';
+    s._testMsg=d.ok?d.msg:d.error;
+    if(btn){btn.textContent='测试';btn.disabled=false;}
+    renderSources();
+    return d;
+  }catch(e){
+    s._testState='fail';
+    s._testMsg='请求失败';
+    if(btn){btn.textContent='测试';btn.disabled=false;}
+    renderSources();
+    return {ok:false,error:'请求失败'};
+  }
+}
+
+async function testAllSources(){
+  const btn=document.getElementById('testAllSourcesBtn');
+  btn.disabled=true;
+  btn.textContent='测试中...';
+  for(let i=0;i<sources.length;i++) await testSourceAt(i);
+  btn.disabled=false;
+  btn.textContent='🧪 全部测试';
+  const ok=sources.filter(s=>s._testState==='ok').length;
+  toast(`接口测试完成：${ok}/${sources.length} 正常`, ok===sources.length?'success':'error');
 }
 function renderSources(){
   const el=document.getElementById('sourcesList');
@@ -608,10 +652,7 @@ function renderSources(){
     const i=parseInt(btn.dataset.i);
     if(btn.dataset.action==='test'){
       const s=sources[i];
-      btn.textContent='测试中...';btn.disabled=true;
-      const r=await fetch('/api/sources/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:s.name,url:s.url})});
-      const d=await r.json();
-      btn.textContent='测试';btn.disabled=false;
+      const d=await testSourceAt(i,btn);
       toast(d.ok?`✓ ${s.name}：${d.msg}`:`✗ ${s.name}：${d.error}`, d.ok?'success':'error');
     } else if(btn.dataset.action==='edit'){
       const s=sources[i];
@@ -648,6 +689,8 @@ function renderSources(){
     }
   };
 }
+document.getElementById('testAllSourcesBtn').addEventListener('click',testAllSources);
+
 document.getElementById('addSourceBtn').addEventListener('click',async()=>{
   const name=document.getElementById('srcName').value.trim();
   const url=document.getElementById('srcUrl').value.trim();

@@ -39,7 +39,7 @@
   ],
   "settings": {
     "check_interval": 3600,
-    "password_hash": "*",
+    "password_hash": "",
     "tvbox_local_enabled": true,
     "tvbox_emby_enabled": false
   },

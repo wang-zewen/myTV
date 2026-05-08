@@ -136,6 +136,15 @@ button{cursor:pointer;font-family:inherit;}
 .meta-chip{background:var(--s3);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:12px;color:var(--fg2);cursor:pointer;transition:.18s;font-weight:500;white-space:nowrap;}
 .meta-chip:hover{color:var(--fg);border-color:rgba(124,111,255,.4);background:rgba(124,111,255,.08);}
 .meta-chip-label{font-size:10px;font-weight:700;color:var(--acc2);margin-right:3px;}
+.player-actions-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:18px;}
+.center-play-btn{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:76px;height:76px;border:none;border-radius:999px;background:rgba(255,255,255,.94);color:var(--acc);font-size:30px;font-weight:800;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 14px 34px rgba(15,23,42,.18);z-index:4;transition:opacity .18s,transform .18s,background .18s;}
+.center-play-btn:hover{transform:translate(-50%,-50%) scale(1.06);background:#fff;}
+.center-play-btn.hidden{opacity:0;pointer-events:none;}
+.secondary-play-btn{padding:10px 18px;border:none;border-radius:10px;background:var(--acc-g);color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 6px 18px rgba(99,102,241,.24);}
+.secondary-play-btn:hover{filter:brightness(1.06);}
+.nav-video-btn{padding:10px 16px;border:1px solid var(--border);border-radius:10px;background:var(--s1);color:var(--fg2);font-size:13px;font-weight:600;cursor:pointer;}
+.nav-video-btn:hover{border-color:rgba(99,102,241,.3);background:var(--s2);color:var(--fg);}
+.nav-video-btn:disabled{opacity:.45;cursor:not-allowed;}
 </style>
 </head>
 <body>

@@ -45,6 +45,10 @@ VIDEO_DIR.mkdir(parents=True, exist_ok=True)
 DATA_FILE = Path(os.environ.get("STREAMVAULT_DATA_FILE", str(_BASE_DIR / "data.json")))
 DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
 
+CACHE_DIR = Path(os.environ.get("STREAMVAULT_CACHE_DIR", str(_BASE_DIR / "cache")))
+EMBY_IMAGE_CACHE_DIR = CACHE_DIR / "emby_images"
+EMBY_IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
 CHECK_INTERVAL = 3600   # 每小时检查一次订阅更新
 MAX_CONCURRENT_DOWNLOADS = 3  # 最大并发下载数
 
@@ -1281,7 +1285,7 @@ async def tvbox_emby(request: Request):
                     "vod_name": item["Name"],
                     "type_id": t_idx or 1,
                     "type_name": item.get("Type", ""),
-                    "vod_pic": f"{base_url}/api/emby/image/{item['Id']}" if has_img else "",
+                    "vod_pic": f"{base_url}/api/emby/image/{item['Id']}?w=200" if has_img else "",
                     "vod_remarks": str(item.get("ProductionYear", "")),
                     "vod_time": "",
                 })
@@ -1346,7 +1350,7 @@ async def tvbox_emby(request: Request):
                     "vod_name": item.get("Name", ""),
                     "type_id": 1,
                     "type_name": item_type,
-                    "vod_pic": f"{base_url}/api/emby/image/{item_id}" if has_img else "",
+                    "vod_pic": f"{base_url}/api/emby/image/{item_id}?w=320" if has_img else "",
                     "vod_remarks": str(item.get("ProductionYear", "")),
                     "vod_content": (item.get("Overview") or "")[:500],
                     "vod_time": "",
@@ -1472,6 +1476,25 @@ async def emby_libraries():
         raise HTTPException(502, str(e))
 
 
+def _map_emby_items(raw_items: list) -> list:
+    items = []
+    for i in raw_items:
+        if i.get("Type") not in {"Movie", "Series"}:
+            continue
+        has_img = bool((i.get("ImageTags") or {}).get("Primary"))
+        thumb = f"/api/emby/image/{i['Id']}?w=200" if has_img else ""
+        items.append({
+            "id": i["Id"],
+            "name": i.get("Name", ""),
+            "type": i.get("Type", "Movie"),
+            "year": i.get("ProductionYear", ""),
+            "overview": (i.get("Overview") or "")[:200],
+            "thumb": thumb,
+            "rating": i.get("OfficialRating", ""),
+        })
+    return items
+
+
 @app.get("/api/emby/items")
 async def emby_items(parent_id: str = "", pg: int = 1, limit: int = 40):
     url = emby_config.get("url", "")
@@ -1479,29 +1502,6 @@ async def emby_items(parent_id: str = "", pg: int = 1, limit: int = 40):
     user_id = emby_config.get("user_id", "")
     if not url or not api_key or not user_id:
         raise HTTPException(400, "Emby 未完整配置")
-
-    def _map_emby_items(raw_items: list) -> list:
-        items = []
-        for i in raw_items:
-            if i.get("Type") not in {"Movie", "Series"}:
-                continue
-            has_img = bool((i.get("ImageTags") or {}).get("Primary"))
-            thumb = f"/api/emby/image/{i['Id']}" if has_img else ""
-            people = i.get("People") or []
-            actors = [{"id": p.get("Id", ""), "name": p.get("Name", ""), "role": p.get("Role", "")}
-                      for p in people if p.get("Name") and p.get("Type") in {"Actor", "GuestStar", "Director", "Writer"}]
-            items.append({
-                "id": i["Id"],
-                "name": i.get("Name", ""),
-                "type": i.get("Type", "Movie"),
-                "year": i.get("ProductionYear", ""),
-                "overview": (i.get("Overview") or "")[:200],
-                "thumb": thumb,
-                "rating": i.get("OfficialRating", ""),
-                "genres": i.get("Genres") or [],
-                "people": actors[:8],
-            })
-        return items
 
     try:
         async with _make_http_client() as client:
@@ -1623,23 +1623,7 @@ async def emby_person_items(person_id: str, pg: int = 1, limit: int = 40):
                                  params=params, timeout=12)
             r.raise_for_status()
             data = r.json()
-            items = []
-            for i in data.get("Items", []):
-                if i.get("Type") not in {"Movie", "Series"}:
-                    continue
-                has_img = bool((i.get("ImageTags") or {}).get("Primary"))
-                thumb = f"/api/emby/image/{i['Id']}" if has_img else ""
-                items.append({
-                    "id": i["Id"],
-                    "name": i.get("Name", ""),
-                    "type": i.get("Type", "Movie"),
-                    "year": i.get("ProductionYear", ""),
-                    "overview": (i.get("Overview") or "")[:200],
-                    "thumb": thumb,
-                    "rating": i.get("OfficialRating", ""),
-                    "genres": i.get("Genres") or [],
-                    "people": [],
-                })
+            items = _map_emby_items(data.get("Items", []))
             return {"items": items, "total": data.get("TotalRecordCount", len(items)), "page": pg}
     except Exception as e:
         raise HTTPException(502, str(e))
@@ -1668,22 +1652,37 @@ async def emby_episodes(series_id: str):
 
 
 @app.get("/api/emby/image/{item_id}")
-async def emby_image(item_id: str):
-    """代理 Emby 封面图片，API Key 不暴露给浏览器"""
+async def emby_image(item_id: str, w: int = 200):
+    """代理 Emby 封面图片并缓存到本地，减少重复回源开销。"""
     from fastapi.responses import Response
     url = emby_config.get("url", "")
     api_key = emby_config.get("api_key", "")
     if not url or not api_key:
         raise HTTPException(400, "Emby 未配置")
+    width = max(120, min(int(w or 200), 600))
+    cache_file = EMBY_IMAGE_CACHE_DIR / f"{item_id}_{width}.img"
+    if cache_file.exists():
+        media_type = "image/jpeg"
+        if cache_file.suffix.lower() == '.png':
+            media_type = 'image/png'
+        return FileResponse(cache_file, media_type=media_type, headers={"Cache-Control": "public, max-age=86400"})
     image_url = (f"{url}/Items/{item_id}/Images/Primary"
-                 f"?api_key={api_key}&maxWidth=300&quality=90")
+                 f"?api_key={api_key}&maxWidth={width}&quality=82")
     try:
-        async with httpx.AsyncClient(follow_redirects=True) as client:
+        async with _make_http_client() as client:
             r = await client.get(image_url, timeout=10)
             r.raise_for_status()
+            content_type = r.headers.get("content-type", "image/jpeg").split(';')[0].strip()
+            ext = '.jpg'
+            if 'png' in content_type:
+                ext = '.png'
+            target = EMBY_IMAGE_CACHE_DIR / f"{item_id}_{width}{ext}"
+            target.write_bytes(r.content)
+            if target != cache_file and cache_file.exists():
+                cache_file.unlink(missing_ok=True)
             return Response(
                 content=r.content,
-                media_type=r.headers.get("content-type", "image/jpeg"),
+                media_type=content_type,
                 headers={"Cache-Control": "public, max-age=86400"},
             )
     except Exception:

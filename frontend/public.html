@@ -132,6 +132,10 @@ button{cursor:pointer;font-family:inherit;}
 .ep{background:var(--s3);border:1px solid var(--border);border-radius:var(--rsm);padding:7px 15px;font-size:12px;color:var(--fg2);transition:.18s;min-width:56px;text-align:center;font-weight:500;}
 .ep.on{background:var(--acc-g);color:#fff;border-color:transparent;font-weight:700;box-shadow:0 3px 12px rgba(124,111,255,.32);}
 .ep:hover:not(.on){color:var(--fg);border-color:rgba(124,111,255,.36);background:rgba(124,111,255,.07);}
+.meta-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:14px;}
+.meta-chip{background:var(--s3);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:12px;color:var(--fg2);cursor:pointer;transition:.18s;font-weight:500;white-space:nowrap;}
+.meta-chip:hover{color:var(--fg);border-color:rgba(124,111,255,.4);background:rgba(124,111,255,.08);}
+.meta-chip-label{font-size:10px;font-weight:700;color:var(--acc2);margin-right:3px;}
 </style>
 </head>
 <body>
@@ -230,6 +234,7 @@ let _playerReadyBound=false;
 let embyLibraries=[], curEmbyLib='', embyPage=1, embyTotal=0;
 let curEmbyItem=null;
 let curEmbyPerson=null;
+let _embyCurPeople=[];
 
 // ── init ──────────────────────────────────────────────────────
 async function init(){
@@ -320,7 +325,12 @@ async function fetchCatalog(srcUrl,typeId,pg,resetCats){
 }
 
 async function loadMore(){
-  if(isEmby){embyPage++;await loadEmbyItems(curEmbyLib,embyPage);return;}
+  if(isEmby){
+    embyPage++;
+    if(curEmbyPerson) await loadEmbyPersonItems(curEmbyPerson.id,embyPage);
+    else await loadEmbyItems(curEmbyLib,embyPage);
+    return;
+  }
   if(page>=pageCount||isSearch||isLocal)return;
   page++;
   await fetchCatalog(curSrc,curCat,page,false);
@@ -351,7 +361,7 @@ function renderGrid(list,replace,showSrc){
 
 function cmsCard(v,i,showSrc){
   const hue=hash(v.vod_name)%360;
-  const img=v.vod_pic?`<img src="${esc(v.vod_pic)}" loading="lazy" onerror="this.remove()">`:'';
+  const img=v.vod_pic?`<img src="${esc(v.vod_pic)}" loading="lazy" decoding="async" fetchpriority="low" onerror="this.remove()">`:'';
   const bg=`background:linear-gradient(145deg,hsl(${hue},30%,80%),hsl(${(hue+55)%360},22%,70%))`;
   const tag=v.vod_remarks?`<div class="vc-tag">${esc(v.vod_remarks)}</div>`:'';
   const sub=[v.vod_year,v.type_name,v.vod_area].filter(Boolean).join(' · ');
@@ -399,7 +409,7 @@ $('embyPwdBtn').addEventListener('click',doEmbyAuth);
 $('embyPwdInput').addEventListener('keydown',e=>{if(e.key==='Enter')doEmbyAuth();});
 
 async function _openEmby(){
-  curSrc=EMBY;isEmby=true;isLocal=false;isSearch=false;
+  curSrc=EMBY;isEmby=true;isLocal=false;isSearch=false;curEmbyPerson=null;
   $('q').value='';
   renderSrcBar();
   showBrowse();
@@ -419,7 +429,7 @@ async function _openEmby(){
 
 
 async function selectEmbyLib(libId){
-  curEmbyLib=libId;embyPage=1;vodArr=[];
+  curEmbyLib=libId;embyPage=1;vodArr=[];curEmbyPerson=null;
   document.querySelectorAll('.ctab').forEach(b=>b.classList.toggle('on',b.dataset.cat===libId));
   setGrid(skelHtml(12));
   await loadEmbyItems(libId,1);
@@ -454,7 +464,7 @@ function renderEmbyGrid(items,replace){
 function embyCard(v,i){
   const hue=hash(v.name)%360;
   const bg=`background:linear-gradient(145deg,hsl(${hue},30%,80%),hsl(${(hue+55)%360},22%,70%))`;
-  const img=v.thumb?`<img src="${esc(v.thumb)}" loading="lazy" onerror="this.remove()">`:'';
+  const img=v.thumb?`<img src="${esc(v.thumb)}" loading="lazy" decoding="async" fetchpriority="low" onerror="this.remove()">`:'';
   const tag=v.type==='Series'?`<div class="vc-tag">剧集</div>`:v.year?`<div class="vc-tag">${esc(String(v.year))}</div>`:'';
   return `<div class="vc" onclick="openDetail(${i})">
     <div class="vc-thumb" style="${bg}">
@@ -469,8 +479,11 @@ function embyCard(v,i){
   </div>`;
 }
 
+function _clearPeopleChips(){const el=document.getElementById('dvPeopleChips');if(el)el.remove();}
+
 async function openEmbyDetail(v){
   curEmbyItem=v;
+  _clearPeopleChips();
   showDetail();
   $('dvCrumb').textContent='Emby';
   $('dvTitle').textContent=v.name;
@@ -479,20 +492,29 @@ async function openEmbyDetail(v){
   $('epSection').style.display='none';
   $('embyActions').style.display='none';
   stopPlayer();
+  _embyCurPeople=[];
   try{
     const dr=await fetch(`/api/emby/detail/${v.id}`);
-    const detail=await dr.json();
     if(dr.ok){
-      const directors=(detail.people||[]).filter(p=>p.type==='Director').map(p=>p.name).slice(0,2);
-      const actors=(detail.people||[]).filter(p=>p.type==='Actor' || p.type==='GuestStar');
+      const detail=await dr.json();
+      const directors=(detail.people||[]).filter(p=>p.type==='Director').slice(0,2);
+      const actors=(detail.people||[]).filter(p=>p.type==='Actor'||p.type==='GuestStar').slice(0,12);
       $('dvMeta').innerHTML=[
         detail.year||'',
         detail.type==='Series'?'剧集':'电影',
         detail.rating?`分级：${esc(detail.rating)}`:'',
-        directors.length?`导演：${esc(directors.join('、'))}`:'',
+        directors.length?`导演：${esc(directors.map(p=>p.name).join('、'))}`:'',
         detail.genres&&detail.genres.length?`类型：${esc(detail.genres.slice(0,3).join(' / '))}`:''
       ].filter(Boolean).join('  ·  ');
-      $('dvDesc').innerHTML=`${esc(detail.overview||v.overview||'')}${actors.length?`<div class="meta-chips">${actors.slice(0,12).map(p=>`<button class="meta-chip person-chip" onclick="openEmbyPerson('${p.id}','${esc(p.name)}')">👤 ${esc(p.name)}</button>`).join('')}</div>`:''}`;
+      $('dvDesc').textContent=detail.overview||v.overview||'';
+      _embyCurPeople=[...directors,...actors];
+      if(_embyCurPeople.length){
+        const chips=_embyCurPeople.map((p,i)=>{
+          const label=p.type==='Director'?`<span class="meta-chip-label">导</span>`:'';
+          return `<button class="meta-chip" onclick="_browseByPersonIdx(${i})">${label}${esc(p.name)}</button>`;
+        }).join('');
+        $('dvDesc').insertAdjacentHTML('afterend',`<div class="meta-chips" id="dvPeopleChips">${chips}</div>`);
+      }
     }
   }catch(e){}
   if(v.type==='Series'){
@@ -529,22 +551,37 @@ async function embyDirectPlay(itemId,epIdx){
   }catch(e){$('playerErrMsg').textContent='获取直链失败：'+e.message;$('playerErr').style.display='flex';}
 }
 
+function _browseByPersonIdx(idx){
+  const p=_embyCurPeople[idx];
+  if(!p||!p.id) return;
+  openEmbyPerson(p.id, p.name);
+}
+
 async function openEmbyPerson(personId, personName){
-  curSrc=EMBY;isEmby=true;isLocal=false;isSearch=false;curEmbyPerson={id:personId,name:personName};
+  curSrc=EMBY;isEmby=true;isLocal=false;isSearch=false;
+  curEmbyPerson={id:personId,name:personName};
+  embyPage=1; vodArr=[];
   stopPlayer();
+  renderSrcBar();
   showBrowse();
   $('catOuter').style.display='none';
   setGrid(skelHtml(12));
-  $('secHd').innerHTML=secHdHtml(`演员：${personName}`,'加载中...');
+  $('secHd').innerHTML=secHdHtml(personName,'加载中...');
+  await loadEmbyPersonItems(personId, 1);
+}
+
+async function loadEmbyPersonItems(personId, pg){
   try{
-    const r=await fetch(`/api/emby/person/${personId}?pg=1&limit=40`);
+    const r=await fetch(`/api/emby/person/${encodeURIComponent(personId)}?pg=${pg}&limit=40`);
     const d=await r.json();
     if(!r.ok) throw new Error(d.detail||'演员作品加载失败');
-    vodArr=(d.items||[]).map(i=>({...i,__emby:true}));
-    embyTotal=d.total||vodArr.length;
-    $('secHd').innerHTML=secHdHtml(`演员：${personName}`, `${embyTotal} 个`);
-    renderEmbyGrid(vodArr,true);
-    $('moreWrap').style.display='none';
+    embyTotal=d.total||0;
+    const items=(d.items||[]).map(i=>({...i,__emby:true}));
+    if(pg===1){vodArr=items;}else{vodArr=[...vodArr,...items];}
+    const label=curEmbyPerson?.name||'演员';
+    if(pg===1) $('secHd').innerHTML=secHdHtml(label,`${embyTotal} 个`);
+    renderEmbyGrid(items, pg===1);
+    $('moreWrap').style.display=vodArr.length<embyTotal?'block':'none';
   }catch(e){setGrid(emptyHtml('⚠️','加载失败', e && e.message ? e.message : '演员作品加载失败'));}
 }
 
@@ -578,6 +615,7 @@ async function openDetail(idx){
     return;
   }
   if(v.__local){
+    _clearPeopleChips();
     showDetail();
     $('dvCrumb').textContent='本地视频库';
     $('dvTitle').textContent=v.name;
@@ -589,6 +627,7 @@ async function openDetail(idx){
     return;
   }
   const srcUrl=v.source_url||curSrc;
+  _clearPeopleChips();
   showDetail();
   $('dvCrumb').textContent=sources.find(s=>s.url===srcUrl)?.name||'';
   $('dvTitle').textContent=v.vod_name;

@@ -349,6 +349,26 @@ input::placeholder{color:var(--muted);}
       <p style="font-size:12px;color:var(--muted)">新下载视频后 TVBox 刷新即可看到，无需重新配置。</p>
     </div>
     <div class="tvbox-card">
+      <div class="slabel">内容曝光设置</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:12px">控制哪些内容出现在 TVBox 订阅中。采集站接口的单独开关在「接口管理」页面。</p>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <button id="tvboxLocalToggleBtn" class="btn btn-sm btn-ghost" onclick="toggleTvboxExposure('local')">...</button>
+          <div>
+            <span style="font-size:13px;font-weight:500">📼 本地视频库</span>
+            <span style="font-size:12px;color:var(--muted);margin-left:8px">已下载到服务器的视频</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <button id="tvboxEmbyToggleBtn" class="btn btn-sm btn-ghost" onclick="toggleTvboxExposure('emby')">...</button>
+          <div>
+            <span style="font-size:13px;font-weight:500">🎬 Emby 媒体库</span>
+            <span style="font-size:12px;color:var(--muted);margin-left:8px">仅在 Emby 已配置时有效</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="tvbox-card">
       <div class="slabel">注意事项</div>
       <p style="font-size:13px;color:var(--muted);line-height:1.8">
         • 电视和服务器需在<strong style="color:var(--text)">同一局域网</strong>，或服务器有公网IP<br>
@@ -519,12 +539,13 @@ function renderSources(){
     <div class="source-item" id="src-row-${i}" style="${s.enabled===false?'opacity:.5':''}">
       <div class="source-dot" style="background:${s.enabled===false?'var(--muted)':'var(--green)'}"></div>
       <div class="source-info">
-        <div class="source-name">${esc(s.name)}${s.enabled===false?'<span style="font-size:11px;color:var(--muted);font-family:\'DM Mono\',monospace;margin-left:6px">(已禁用)</span>':''}</div>
+        <div class="source-name">${esc(s.name)}${s.enabled===false?'<span style="font-size:11px;color:var(--muted);font-family:\'DM Mono\',monospace;margin-left:6px">(已禁用)</span>':''}${s.tvbox_enabled===false?'<span style="font-size:11px;color:var(--muted);font-family:\'DM Mono\',monospace;margin-left:6px">(TVBox 隐藏)</span>':''}</div>
         <div class="source-url">${esc(s.url)}</div>
       </div>
       <button class="btn btn-ghost btn-sm" data-i="${i}" data-action="test" title="测试接口是否可用">测试</button>
       <button class="btn btn-ghost btn-sm" data-i="${i}" data-action="edit">编辑</button>
       <button class="btn btn-${s.enabled===false?'green':'yellow'} btn-sm" data-i="${i}" data-action="toggle">${s.enabled===false?'▶ 启用':'⏸ 禁用'}</button>
+      <button class="btn btn-${s.tvbox_enabled===false?'ghost':'ghost'} btn-sm" data-i="${i}" data-action="tvbox-toggle" title="${s.tvbox_enabled===false?'当前在 TVBox 中隐藏，点击显示':'当前在 TVBox 中可见，点击隐藏'}">📺 ${s.tvbox_enabled===false?'显示':'隐藏'}</button>
       <button class="btn btn-danger btn-sm" data-i="${i}" data-action="delete">删除</button>
     </div>`).join('');
   document.getElementById('sourcesList').onclick=async e=>{
@@ -561,6 +582,10 @@ function renderSources(){
     } else if(btn.dataset.action==='toggle'){
       const r=await fetch(`/api/sources/${i}/toggle`,{method:'PATCH'});
       if(r.ok){const d=await r.json();await loadSources();toast(d.enabled?'接口已启用':'接口已禁用');}
+      else toast('操作失败','error');
+    } else if(btn.dataset.action==='tvbox-toggle'){
+      const r=await fetch(`/api/sources/${i}/tvbox-toggle`,{method:'PATCH'});
+      if(r.ok){const d=await r.json();await loadSources();toast(d.tvbox_enabled?'已在 TVBox 中显示该接口':'已在 TVBox 中隐藏该接口');}
       else toast('操作失败','error');
     } else if(btn.dataset.action==='delete'){
       if(!confirm('确定删除该接口？')) return;
@@ -1049,7 +1074,26 @@ document.getElementById('saveEmbyPwdBtn').addEventListener('click',async()=>{
 });
 
 // ── TVBox ──────────────────────────────────────────────
-function initTvboxPage(){document.getElementById('tvboxUrl').textContent=`${location.origin}/tvbox/source`;}
+let _tvboxSettings={local_enabled:true,emby_enabled:true};
+async function initTvboxPage(){
+  document.getElementById('tvboxUrl').textContent=`${location.origin}/tvbox/source`;
+  try{
+    const r=await fetch('/api/tvbox/settings');
+    if(r.ok){_tvboxSettings=await r.json();_renderTvboxExposure();}
+  }catch(e){}
+}
+function _renderTvboxExposure(){
+  const lb=document.getElementById('tvboxLocalToggleBtn');
+  const eb=document.getElementById('tvboxEmbyToggleBtn');
+  if(lb){lb.textContent=_tvboxSettings.local_enabled?'✓ 已显示':'✗ 已隐藏';lb.style.color=_tvboxSettings.local_enabled?'var(--green)':'var(--muted)';}
+  if(eb){eb.textContent=_tvboxSettings.emby_enabled?'✓ 已显示':'✗ 已隐藏';eb.style.color=_tvboxSettings.emby_enabled?'var(--green)':'var(--muted)';}
+}
+async function toggleTvboxExposure(type){
+  const body=type==='local'?{local_enabled:!_tvboxSettings.local_enabled}:{emby_enabled:!_tvboxSettings.emby_enabled};
+  const r=await fetch('/api/tvbox/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.ok){_tvboxSettings=await r.json();_renderTvboxExposure();toast(type==='local'?(_tvboxSettings.local_enabled?'本地视频库已显示于 TVBox':'本地视频库已从 TVBox 隐藏'):(_tvboxSettings.emby_enabled?'Emby 媒体库已显示于 TVBox':'Emby 媒体库已从 TVBox 隐藏'));}
+  else toast('操作失败','error');
+}
 function copyTvboxUrl(){navigator.clipboard.writeText(document.getElementById('tvboxUrl').textContent);toast('订阅地址已复制');}
 
 // ── 全局轮询 ──────────────────────────────────────────

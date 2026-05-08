@@ -40,7 +40,7 @@ MAX_CONCURRENT_DOWNLOADS = 3  # 最大并发下载数
 tasks: dict = {}          # 下载任务
 api_sources: list = []    # 采集站接口
 subscriptions: dict = {}  # 订阅列表 {sub_id: Subscription}
-settings: dict = {"check_interval": 3600, "password_hash": ""}  # 全局设置，password_hash 为空时不需要认证
+settings: dict = {"check_interval": 3600, "password_hash": "", "tvbox_local_enabled": True, "tvbox_emby_enabled": True}  # 全局设置，password_hash 为空时不需要认证
 emby_config: dict = {"url": "", "api_key": "", "user_id": "", "password_hash": ""}
 _download_semaphore: Optional[asyncio.Semaphore] = None
 
@@ -84,6 +84,8 @@ def load_data():
         data = json.loads(DATA_FILE.read_text())
         api_sources.clear()
         api_sources.extend(data.get("api_sources", []))
+        for src in api_sources:
+            src.setdefault("tvbox_enabled", True)
         settings.update(data.get("settings", {}))
         saved_ec = data.get("emby_config", {})
         for k in emby_config:
@@ -585,7 +587,7 @@ async def add_source(src: ApiSource):
     for s in api_sources:
         if s["url"] == src.url:
             raise HTTPException(400, "该接口已存在")
-    api_sources.append({"name": src.name, "url": src.url, "enabled": True})
+    api_sources.append({"name": src.name, "url": src.url, "enabled": True, "tvbox_enabled": True})
     save_data()
     return {"ok": True}
 
@@ -614,6 +616,14 @@ async def toggle_source(index: int):
     api_sources[index]["enabled"] = not api_sources[index].get("enabled", True)
     save_data()
     return {"enabled": api_sources[index]["enabled"]}
+
+@app.patch("/api/sources/{index}/tvbox-toggle")
+async def tvbox_toggle_source(index: int):
+    if index < 0 or index >= len(api_sources):
+        raise HTTPException(404, "不存在")
+    api_sources[index]["tvbox_enabled"] = not api_sources[index].get("tvbox_enabled", True)
+    save_data()
+    return {"tvbox_enabled": api_sources[index]["tvbox_enabled"]}
 
 @app.delete("/api/sources/{index}")
 async def delete_source(index: int):
@@ -944,6 +954,31 @@ async def auth_status():
     """告知前端是否需要登录"""
     return {"need_auth": bool(settings.get("password_hash", ""))}
 
+# ── TVBox 设置 ──
+
+class TvboxSettings(BaseModel):
+    local_enabled: Optional[bool] = None
+    emby_enabled: Optional[bool] = None
+
+@app.get("/api/tvbox/settings")
+async def get_tvbox_settings():
+    return {
+        "local_enabled": settings.get("tvbox_local_enabled", True),
+        "emby_enabled": settings.get("tvbox_emby_enabled", True),
+    }
+
+@app.patch("/api/tvbox/settings")
+async def update_tvbox_settings(body: TvboxSettings):
+    if body.local_enabled is not None:
+        settings["tvbox_local_enabled"] = body.local_enabled
+    if body.emby_enabled is not None:
+        settings["tvbox_emby_enabled"] = body.emby_enabled
+    save_data()
+    return {
+        "local_enabled": settings["tvbox_local_enabled"],
+        "emby_enabled": settings["tvbox_emby_enabled"],
+    }
+
 # ── TVBox 订阅接口 ──
 
 def _get_video_files():
@@ -965,18 +1000,19 @@ async def tvbox_source(request: Request):
     sites = []
 
     # 1. 本地视频库（type=0，内置JSON直接渲染）
-    sites.append({
-        "key": "streamvault_local",
-        "name": "📼 本地视频库",
-        "type": 1,
-        "api": f"{base_url}/tvbox",
-        "searchable": 0,
-        "quickSearch": 0,
-        "filterable": 0,
-    })
+    if settings.get("tvbox_local_enabled", True):
+        sites.append({
+            "key": "streamvault_local",
+            "name": "📼 本地视频库",
+            "type": 1,
+            "api": f"{base_url}/tvbox",
+            "searchable": 0,
+            "quickSearch": 0,
+            "filterable": 0,
+        })
 
-    # 2. Emby 媒体库（配置后才显示）
-    if emby_config.get("url") and emby_config.get("api_key"):
+    # 2. Emby 媒体库（配置后才显示，且 TVBox 曝光已开启）
+    if emby_config.get("url") and emby_config.get("api_key") and settings.get("tvbox_emby_enabled", True):
         sites.append({
             "key": "emby_library",
             "name": "🎬 Emby 媒体库",
@@ -990,6 +1026,8 @@ async def tvbox_source(request: Request):
     # 3. 网页里配置的每个采集站（type=1，苹果CMS JSON接口）
     for src in api_sources:
         if not src.get("enabled", True):
+            continue
+        if not src.get("tvbox_enabled", True):
             continue
         # key 只允许字母数字下划线
         safe_key = re.sub(r'[^a-zA-Z0-9_]', '_', src["name"])

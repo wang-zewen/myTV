@@ -37,10 +37,11 @@ cp "$SCRIPT_DIR/backend/main.py" "$INSTALL_DIR/main.py"
 cp "$SCRIPT_DIR/frontend/index.html" "$INSTALL_DIR/index.html"
 cp "$SCRIPT_DIR/frontend/public.html" "$INSTALL_DIR/public.html"
 cp "$SCRIPT_DIR/frontend/favicon.svg" "$INSTALL_DIR/favicon.svg"
+cp "$SCRIPT_DIR/data.example.json" "$INSTALL_DIR/data.example.json"
 
 if [ ! -f "$DATA_FILE" ]; then
-  echo '{"api_sources": [], "subscriptions": {}, "settings": {"check_interval": 3600, "password_hash": ""}, "emby_config": {"url": "", "api_key": "", "user_id": "", "password_hash": ""}}' > "$DATA_FILE"
-  echo -e "  ${GREEN}首次安装，已创建空配置文件${NC}"
+  cp "$SCRIPT_DIR/data.example.json" "$DATA_FILE"
+  echo -e "  ${GREEN}首次安装，已从 data.example.json 创建默认配置${NC}"
 else
   echo -e "  ${GREEN}检测到已有配置，保留 data.json（接口、订阅不丢失）${NC}"
 fi

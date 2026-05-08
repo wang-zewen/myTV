@@ -10,6 +10,7 @@ streamvault/
 │   └── index.html     # 网页管理界面
 ├── deploy.sh          # 一键安装脚本（从 GitHub 下载并安装）
 ├── install.sh         # 本地安装/更新脚本
+├── data.example.json  # 默认示例配置（首次安装会复制为 data.json）
 └── README.md
 ```
 
@@ -38,6 +39,8 @@ bash <(wget -qO- https://raw.githubusercontent.com/wang-zewen/myTV/main/deploy.s
 ```bash
 bash install.sh
 ```
+
+首次安装时会默认把项目里的 `data.example.json` 复制为 `~/streamvault/data.json`，作为初始配置模板；后续再次执行安装脚本会保留你已经在使用的 `data.json`。
 
 ---
 

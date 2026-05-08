@@ -466,7 +466,7 @@ async function openEmbyDetail(v){
           <span style="font-size:12px;color:var(--fg2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
             title="${esc(ep.name)}">S${ep.season}E${ep.episode} ${esc(ep.name)}</span>
           <button onclick="embyDirectPlay('${ep.id}')" style="padding:3px 8px;background:var(--acc-g);border:none;border-radius:5px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">▶</button>
-          <button onclick="embyCachePlay('${ep.id}','${esc(v.name+'_S'+ep.season+'E'+ep.episode+'_'+ep.name)}')" style="padding:3px 8px;background:var(--s3);border:1px solid var(--border);border-radius:5px;color:var(--fg2);font-size:11px;cursor:pointer;white-space:nowrap;">⬇</button>
+          <button onclick="embyCachePlay('${ep.id}','${esc(v.name+'_S'+ep.season+'E'+ep.episode+'_'+ep.name)}',this,null)" style="padding:3px 8px;background:var(--s3);border:1px solid var(--border);border-radius:5px;color:var(--fg2);font-size:11px;cursor:pointer;white-space:nowrap;min-width:30px;">⬇</button>
         </div>`).join('');
     }catch(e){$('epGrid').innerHTML='<span style="color:#f87171;font-size:12px">加载失败</span>';}
   } else {
@@ -488,45 +488,48 @@ async function embyDirectPlay(itemId){
   }catch(e){$('playerErrMsg').textContent='获取直链失败';$('playerErr').style.display='flex';}
 }
 
-async function embyCachePlay(itemId,itemName){
-  const safeBtn=$('embyCacheBtn');
-  const statusEl=$('embyCacheStatus');
-  if(safeBtn) safeBtn.disabled=true;
-  if(statusEl) statusEl.textContent='提交缓存任务...';
+async function embyCachePlay(itemId,itemName,btn,statusEl){
+  // btn / statusEl 可以是 DOM 元素，也可以省略（此时使用电影详情页的固定元素）
+  const safeBtn=btn||$('embyCacheBtn');
+  const statEl=statusEl||$('embyCacheStatus');
+  if(safeBtn){safeBtn.disabled=true;safeBtn.textContent='提交中...';}
+  if(statEl) statEl.textContent='提交缓存任务...';
+  const origLabel='⬇ 缓存';
   try{
     const r=await fetch(`/api/emby/cache/${itemId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:itemName})});
     const d=await r.json();
     if(d.cached){
-      if(statusEl) statusEl.textContent='';
+      if(statEl) statEl.textContent='';
       startPlay($('player'),d.url);
       return;
     }
     const taskId=d.task_id;
-    if(statusEl) statusEl.textContent='⬇ 缓存下载中...';
-    // 轮询任务直到完成
+    if(statEl) statEl.textContent='⬇ 缓存中...';
     while(true){
       await new Promise(res=>setTimeout(res,2000));
       const tr=await fetch(`/api/task/${taskId}`);
       const td=await tr.json();
-      if(statusEl) statusEl.textContent=`⬇ ${Math.round(td.progress||0)}% ${td.status==='downloading'?'缓存中...':td.status}`;
+      const pct=Math.round(td.progress||0);
+      if(safeBtn) safeBtn.textContent=`${pct}%`;
+      if(statEl) statEl.textContent=`⬇ ${pct}% 缓存中...`;
       if(td.status==='done'){
-        // 查找缓存文件
-        const vr=await fetch('/api/videos');
+        const vr=await fetch('/api/emby/cached');
         const videos=await vr.json();
         const found=videos.find(v=>v.name===itemName||v.filename.startsWith(itemName));
-        if(statusEl) statusEl.textContent='';
+        if(statEl) statEl.textContent='';
+        if(safeBtn){safeBtn.textContent='✓ 已缓存';safeBtn.style.color='var(--acc2)';}
         if(found) startPlay($('player'),found.url);
-        break;
+        return;
       }
       if(td.status==='error'||td.status==='cancelled'){
-        if(statusEl) statusEl.textContent=`缓存失败：${td.error||td.status}`;
+        if(statEl) statEl.textContent=`缓存失败：${td.error||td.status}`;
         break;
       }
     }
   }catch(e){
-    if(statusEl) statusEl.textContent='操作失败';
+    if(statEl) statEl.textContent='操作失败';
   }finally{
-    if(safeBtn) safeBtn.disabled=false;
+    if(safeBtn&&safeBtn.textContent!=='✓ 已缓存'){safeBtn.disabled=false;safeBtn.textContent=origLabel;}
   }
 }
 

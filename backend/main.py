@@ -29,6 +29,8 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 _BASE_DIR = Path(os.environ.get("STREAMVAULT_HOME", Path(__file__).parent))
 VIDEO_DIR = Path(os.environ.get("STREAMVAULT_VIDEO_DIR", str(_BASE_DIR / "videos")))
 VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+EMBY_VIDEO_DIR = VIDEO_DIR / "emby"
+EMBY_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
 
 DATA_FILE = Path(os.environ.get("STREAMVAULT_DATA_FILE", str(_BASE_DIR / "data.json")))
 DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -171,6 +173,19 @@ def _find_output_file(output_name: str):
             return p
     candidates = [
         p for p in VIDEO_DIR.glob(f"{output_name}*")
+        if p.suffix.lower() in _VIDEO_EXTS
+    ]
+    return max(candidates, key=lambda p: p.stat().st_size) if candidates else None
+
+
+def _find_emby_output_file(output_name: str):
+    """在 Emby 专属目录中查找缓存文件"""
+    for ext in _VIDEO_EXTS:
+        p = EMBY_VIDEO_DIR / f"{output_name}{ext}"
+        if p.exists():
+            return p
+    candidates = [
+        p for p in EMBY_VIDEO_DIR.glob(f"{output_name}*")
         if p.suffix.lower() in _VIDEO_EXTS
     ]
     return max(candidates, key=lambda p: p.stat().st_size) if candidates else None
@@ -1091,7 +1106,7 @@ async def _emby_stream_download(task_id: str, stream_url: str, output_name: str)
                             ext = g
                 elif ct == "video/x-matroska":
                     ext = ".mkv"
-                out_path = VIDEO_DIR / f"{output_name}{ext}"
+                out_path = EMBY_VIDEO_DIR / f"{output_name}{ext}"
                 total = int(r.headers.get("content-length", 0) or 0)
                 downloaded = 0
                 task.log_lines.append(
@@ -1257,8 +1272,7 @@ async def emby_items(parent_id: str = "", pg: int = 1, limit: int = 40):
             items = []
             for i in data.get("Items", []):
                 has_img = bool((i.get("ImageTags") or {}).get("Primary"))
-                thumb = (f"{url}/Items/{i['Id']}/Images/Primary"
-                         f"?api_key={api_key}&maxWidth=300&quality=90") if has_img else ""
+                thumb = f"/api/emby/image/{i['Id']}" if has_img else ""
                 items.append({
                     "id": i["Id"],
                     "name": i["Name"],
@@ -1302,10 +1316,10 @@ async def emby_cache(item_id: str, req: EmbyCacheRequest):
     if not url or not api_key:
         raise HTTPException(400, "Emby 未配置")
     name = re.sub(r'[^\w一-鿿\-]', '_', req.name or f"emby_{item_id[:8]}")
-    existing = _find_output_file(name)
+    existing = _find_emby_output_file(name)
     if existing:
         return {"task_id": None, "cached": True,
-                "filename": existing.name, "url": f"/api/stream/{existing.name}"}
+                "filename": existing.name, "url": f"/api/emby/stream/{existing.name}"}
     stream_url = f"{url}/Items/{item_id}/Download?api_key={api_key}"
     task_id = str(uuid.uuid4())
     task = TaskStatus(task_id, name, stream_url, source="emby")
@@ -1313,6 +1327,73 @@ async def emby_cache(item_id: str, req: EmbyCacheRequest):
     tasks[task_id] = task
     asyncio.create_task(_emby_stream_download(task_id, stream_url, name))
     return {"task_id": task_id, "cached": False}
+
+
+@app.get("/api/emby/image/{item_id}")
+async def emby_image(item_id: str):
+    """代理 Emby 封面图片，API Key 不暴露给浏览器"""
+    from fastapi.responses import Response
+    url = emby_config.get("url", "")
+    api_key = emby_config.get("api_key", "")
+    if not url or not api_key:
+        raise HTTPException(400, "Emby 未配置")
+    image_url = (f"{url}/Items/{item_id}/Images/Primary"
+                 f"?api_key={api_key}&maxWidth=300&quality=90")
+    try:
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            r = await client.get(image_url, timeout=10)
+            r.raise_for_status()
+            return Response(
+                content=r.content,
+                media_type=r.headers.get("content-type", "image/jpeg"),
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+    except Exception:
+        raise HTTPException(404, "图片不可用")
+
+
+@app.get("/api/emby/cached")
+async def list_emby_cached():
+    """列出 Emby 缓存视频（在独立目录，不混入普通视频库）"""
+    videos = []
+    if not EMBY_VIDEO_DIR.exists():
+        return videos
+    for f in sorted(EMBY_VIDEO_DIR.iterdir(), key=lambda x: x.stat().st_ctime, reverse=True):
+        if f.suffix.lower() in _VIDEO_EXTS:
+            stat = f.stat()
+            videos.append({
+                "name": f.stem,
+                "filename": f.name,
+                "size_mb": round(stat.st_size / 1024 / 1024, 2),
+                "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                "url": f"/api/emby/stream/{f.name}",
+            })
+    return videos
+
+
+@app.get("/api/emby/stream/{filename}")
+async def stream_emby_video(filename: str):
+    """从 Emby 缓存目录流式播放，与普通视频库隔离"""
+    if "/" in filename or ".." in filename:
+        raise HTTPException(400, "非法文件名")
+    path = EMBY_VIDEO_DIR / filename
+    if not path.exists():
+        raise HTTPException(404, "文件不存在")
+    suffix = path.suffix.lower()
+    media_types = {".mp4": "video/mp4", ".mkv": "video/x-matroska",
+                   ".ts": "video/mp2t", ".m4v": "video/mp4"}
+    return FileResponse(path, media_type=media_types.get(suffix, "video/mp4"))
+
+
+@app.delete("/api/emby/cached/{filename}")
+async def delete_emby_cached(filename: str):
+    if "/" in filename or ".." in filename:
+        raise HTTPException(400, "非法文件名")
+    path = EMBY_VIDEO_DIR / filename
+    if not path.exists():
+        raise HTTPException(404, "文件不存在")
+    path.unlink()
+    return {"ok": True}
 
 
 @app.get("/api/emby/direct/{item_id}")

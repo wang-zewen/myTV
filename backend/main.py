@@ -282,8 +282,21 @@ async def _run_download_core(task_id: str, url: str, output_name: str, media_typ
             nm3u8 = shutil.which("N_m3u8DL-RE")
             ytdlp = shutil.which("yt-dlp") or str(_BASE_DIR / "venv/bin/yt-dlp")
             ffmpeg = shutil.which("ffmpeg")
+            ytdlp_exists = Path(ytdlp).exists()
 
-            if nm3u8:
+            if media_type == "audio" and ytdlp_exists:
+                out_template = str(VIDEO_DIR / f"{output_name}.%(ext)s")
+                cmd = [
+                    ytdlp, url,
+                    "-f", "bestaudio/best",
+                    "--extract-audio",
+                    "--audio-format", "m4a",
+                    "--audio-quality", "0",
+                    "--no-part",
+                    "-o", out_template,
+                    "--newline",
+                ]
+            elif nm3u8:
                 tmp_path = TMP_DIR / output_name
                 tmp_path.mkdir(parents=True, exist_ok=True)
                 cmd = [
@@ -298,35 +311,23 @@ async def _run_download_core(task_id: str, url: str, output_name: str, media_typ
                     "--auto-select",
                     "--disable-update-check",
                 ]
-            elif Path(ytdlp).exists():
+            elif ytdlp_exists:
                 out_template = str(VIDEO_DIR / f"{output_name}.%(ext)s")
-                if media_type == "audio":
-                    cmd = [
-                        ytdlp, url,
-                        "-f", "bestaudio/best",
-                        "--extract-audio",
-                        "--audio-format", "m4a",
-                        "--audio-quality", "0",
-                        "--no-part",
-                        "-o", out_template,
-                        "--newline",
-                    ]
-                else:
-                    cmd = [
-                        ytdlp, url,
-                        "--hls-prefer-native",
-                        "--no-part",
-                        "-o", out_template,
-                        "--newline",
-                    ]
-            elif ffmpeg:
-                out_path = VIDEO_DIR / f"{output_name}.mp4"
                 cmd = [
-                    ffmpeg, "-i", url,
-                    "-c", "copy",
-                    "-y",
-                    str(out_path),
+                    ytdlp, url,
+                    "--hls-prefer-native",
+                    "--no-part",
+                    "-o", out_template,
+                    "--newline",
                 ]
+            elif ffmpeg:
+                out_path = VIDEO_DIR / f"{output_name}.{'m4a' if media_type == 'audio' else 'mp4'}"
+                cmd = [ffmpeg, "-i", url]
+                if media_type == "audio":
+                    cmd += ["-vn", "-c:a", "aac", "-b:a", "192k"]
+                else:
+                    cmd += ["-c", "copy"]
+                cmd += ["-y", str(out_path)]
             else:
                 task.status = "error"
                 task.error = "未找到下载工具（yt-dlp/ffmpeg/N_m3u8DL-RE）"

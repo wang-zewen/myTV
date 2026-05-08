@@ -1033,6 +1033,39 @@ def _get_video_files():
             if f.suffix.lower() in [".mp4", ".mkv", ".ts", ".m4v"]]
 
 
+@app.get("/tvbox/source/{source_index}")
+async def tvbox_source_proxy(source_index: int, request: Request):
+    """Proxy configured CMS sources through our normalized endpoint for TVBox stability."""
+    if source_index < 0 or source_index >= len(api_sources):
+        raise HTTPException(404, "接口不存在")
+    src = api_sources[source_index]
+    if not src.get("enabled", True) or not src.get("tvbox_enabled", True):
+        raise HTTPException(403, "接口未启用 TVBox 暴露")
+    ac = request.query_params.get("ac", "list")
+    pg = request.query_params.get("pg", "1")
+    t_param = request.query_params.get("t", "")
+    ids = request.query_params.get("ids", "")
+    wd = request.query_params.get("wd", "")
+    params = {"ac": ac, "pg": pg}
+    if t_param:
+        params["t"] = t_param
+    if ids:
+        params["ids"] = ids
+    if wd:
+        params["wd"] = wd
+    try:
+        async with _make_http_client() as client:
+            r = await client.get(normalize_api_url(src["url"]), params=params, timeout=15)
+            r.raise_for_status()
+            return JSONResponse(content=r.json())
+    except httpx.TimeoutException:
+        raise HTTPException(504, "上游接口超时")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(502, f"上游接口返回 HTTP {e.response.status_code}")
+    except Exception as e:
+        raise HTTPException(502, str(e))
+
+
 @app.get("/tvbox/source")
 async def tvbox_source(request: Request):
     """
@@ -1069,18 +1102,17 @@ async def tvbox_source(request: Request):
         })
 
     # 3. 网页里配置的每个采集站（type=1，苹果CMS JSON接口）
-    for src in api_sources:
+    for idx, src in enumerate(api_sources):
         if not src.get("enabled", True):
             continue
         if not src.get("tvbox_enabled", True):
             continue
-        # key 只允许字母数字下划线
         safe_key = re.sub(r'[^a-zA-Z0-9_]', '_', src["name"])
         sites.append({
             "key": f"src_{safe_key}",
             "name": src["name"],
             "type": 1,
-            "api": src["url"],
+            "api": f"{base_url}/tvbox/source/{idx}",
             "searchable": 1,
             "quickSearch": 1,
             "filterable": 1,
@@ -1187,12 +1219,12 @@ async def tvbox_emby(request: Request):
     user_id = emby_config.get("user_id", "")
     base_url = str(request.base_url).rstrip("/")
 
-    if not url or not api_key:
-        return JSONResponse({"code": -1, "msg": "Emby 未配置", "list": [], "class": []})
+    if not url or not api_key or not user_id:
+        return JSONResponse({"code": -1, "msg": "Emby 未完整配置", "list": [], "class": []})
 
     ac = request.query_params.get("ac", "list")
 
-    async with httpx.AsyncClient(follow_redirects=True) as client:
+    async with _make_http_client() as client:
         # Always fetch libraries so we can build the class list
         try:
             lib_r = await client.get(
@@ -1421,15 +1453,21 @@ async def emby_libraries():
     url = emby_config.get("url", "")
     api_key = emby_config.get("api_key", "")
     user_id = emby_config.get("user_id", "")
-    if not url or not api_key:
-        raise HTTPException(400, "Emby 未配置")
+    if not url or not api_key or not user_id:
+        raise HTTPException(400, "Emby 未完整配置")
     try:
-        async with httpx.AsyncClient(follow_redirects=True) as client:
+        async with _make_http_client() as client:
             r = await client.get(f"{url}/Users/{user_id}/Views",
                                  headers={"X-Emby-Token": api_key}, timeout=10)
             r.raise_for_status()
-            return [{"id": i["Id"], "name": i["Name"]}
-                    for i in r.json().get("Items", [])]
+            items = r.json().get("Items", [])
+            libs = []
+            for i in items:
+                ctype = (i.get("CollectionType") or "").lower()
+                name = (i.get("Name") or "").strip()
+                if ctype in {"movies", "tvshows", "mixed"} or i.get("Type") == "CollectionFolder":
+                    libs.append({"id": i["Id"], "name": name or i["Id"]})
+            return libs
     except Exception as e:
         raise HTTPException(502, str(e))
 
@@ -1439,10 +1477,10 @@ async def emby_items(parent_id: str = "", pg: int = 1, limit: int = 40):
     url = emby_config.get("url", "")
     api_key = emby_config.get("api_key", "")
     user_id = emby_config.get("user_id", "")
-    if not url or not api_key:
-        raise HTTPException(400, "Emby 未配置")
+    if not url or not api_key or not user_id:
+        raise HTTPException(400, "Emby 未完整配置")
     try:
-        async with httpx.AsyncClient(follow_redirects=True) as client:
+        async with _make_http_client() as client:
             params = {
                 "IncludeItemTypes": "Movie,Series",
                 "Recursive": "true",
@@ -1456,23 +1494,25 @@ async def emby_items(parent_id: str = "", pg: int = 1, limit: int = 40):
                 params["ParentId"] = parent_id
             r = await client.get(f"{url}/Users/{user_id}/Items",
                                  headers={"X-Emby-Token": api_key},
-                                 params=params, timeout=10)
+                                 params=params, timeout=12)
             r.raise_for_status()
             data = r.json()
             items = []
             for i in data.get("Items", []):
+                if i.get("Type") not in {"Movie", "Series"}:
+                    continue
                 has_img = bool((i.get("ImageTags") or {}).get("Primary"))
                 thumb = f"/api/emby/image/{i['Id']}" if has_img else ""
                 items.append({
                     "id": i["Id"],
-                    "name": i["Name"],
-                    "type": i["Type"],
+                    "name": i.get("Name", ""),
+                    "type": i.get("Type", "Movie"),
                     "year": i.get("ProductionYear", ""),
                     "overview": (i.get("Overview") or "")[:200],
                     "thumb": thumb,
                     "rating": i.get("OfficialRating", ""),
                 })
-            return {"items": items, "total": data.get("TotalRecordCount", 0), "page": pg}
+            return {"items": items, "total": data.get("TotalRecordCount", len(items)), "page": pg}
     except Exception as e:
         raise HTTPException(502, str(e))
 

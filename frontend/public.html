@@ -262,8 +262,9 @@ async function selectLocal(){
     if(!vodArr.length){setGrid(emptyHtml('📭','本地视频库为空','在管理界面下载视频后将在此显示'));return;}
     $('secHd').innerHTML=secHdHtml('本地视频库',vodArr.length+'个视频');
     $('grid').innerHTML=vodArr.map((v,i)=>localCard(v,i)).join('');
-  }catch(e){setGrid(emptyHtml('⚠️','加载失败',''));}
+  }catch(e){setGrid(emptyHtml('⚠️','加载失败', e && e.message ? e.message : 'Emby 分类加载失败'));}
 }
+
 
 function localCard(v,i){
   const hue=hash(v.name)%360;
@@ -412,8 +413,9 @@ async function _openEmby(){
     $('catBar').innerHTML=`<button class="ctab on" data-cat="" onclick="selectEmbyLib('')">全部</button>`+
       embyLibraries.map(l=>`<button class="ctab" data-cat="${l.id}" onclick="selectEmbyLib('${l.id}')">${esc(l.name)}</button>`).join('');
     await loadEmbyItems('',1);
-  }catch(e){setGrid(emptyHtml('⚠️','加载失败','请检查 Emby 连接'));}
+  }catch(e){setGrid(emptyHtml('⚠️','加载失败','请检查 Emby 连接或用户配置'));}
 }
+
 
 async function selectEmbyLib(libId){
   curEmbyLib=libId;embyPage=1;vodArr=[];
@@ -428,6 +430,7 @@ async function loadEmbyItems(libId,pg){
     if(libId) p.set('parent_id',libId);
     const r=await fetch('/api/emby/items?'+p);
     const d=await r.json();
+    if(!r.ok) throw new Error(d.detail||d.error||'Emby 分类加载失败');
     embyTotal=d.total||0;
     const items=(d.items||[]).map(i=>({...i,__emby:true}));
     if(pg===1){vodArr=items;}else{vodArr=[...vodArr,...items];}
@@ -435,8 +438,9 @@ async function loadEmbyItems(libId,pg){
     if(pg===1) $('secHd').innerHTML=secHdHtml(libName,`${embyTotal} 个`);
     renderEmbyGrid(items,pg===1);
     $('moreWrap').style.display=vodArr.length<embyTotal?'block':'none';
-  }catch(e){setGrid(emptyHtml('⚠️','加载失败',''));}
+  }catch(e){setGrid(emptyHtml('⚠️','加载失败', e && e.message ? e.message : 'Emby 分类加载失败'));}
 }
+
 
 function renderEmbyGrid(items,replace){
   const off=replace?0:vodArr.length-items.length;

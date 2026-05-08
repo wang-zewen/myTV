@@ -16,7 +16,12 @@
   --text:#e5e7eb;--muted:#94a3b8;--r:11px;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
-body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,sans-serif;min-height:100vh;}
+body{background:
+  radial-gradient(circle at 12% 0%, rgba(129,140,248,.16), transparent 32%),
+  radial-gradient(circle at 88% 10%, rgba(168,85,247,.12), transparent 28%),
+  radial-gradient(circle at 50% 100%, rgba(56,189,248,.08), transparent 30%),
+  linear-gradient(180deg, #0f172a 0%, #0b1220 42%, #0a1020 100%);
+color:var(--text);font-family:'Inter',system-ui,-apple-system,sans-serif;min-height:100vh;}
 .layout{display:grid;grid-template-columns:220px 1fr;min-height:100vh;}
 .topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid var(--border);}
 .topbar-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;flex-shrink:0;}

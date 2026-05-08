@@ -1107,9 +1107,9 @@ async def tvbox_source(request: Request):
             continue
         if not src.get("tvbox_enabled", True):
             continue
-        safe_key = re.sub(r'[^a-zA-Z0-9_]', '_', src["name"])
+        safe_key = re.sub(r'[^a-zA-Z0-9_]', '_', src["name"]).strip('_') or f"source_{idx}"
         sites.append({
-            "key": f"src_{safe_key}",
+            "key": f"src_{idx}_{safe_key}",
             "name": src["name"],
             "type": 1,
             "api": f"{base_url}/tvbox/source/{idx}",

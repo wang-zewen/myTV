@@ -883,11 +883,28 @@ function _loadVideo(url,name,isM3u8){
   document.getElementById('playerModal').classList.add('active');
   if(_hls){_hls.destroy();_hls=null;}
   if(isM3u8&&typeof Hls!=='undefined'&&Hls.isSupported()){
-    _hls=new Hls({enableWorker:true});
+    let _mediaErrCount=0;
+    _hls=new Hls({enableWorker:true,maxBufferLength:30});
     _hls.loadSource(url);_hls.attachMedia(video);
     _hls.on(Hls.Events.MANIFEST_PARSED,()=>video.play().catch(()=>{}));
-    _hls.on(Hls.Events.ERROR,(e,d)=>{if(d.fatal)toast('播放失败，该源可能已失效','error');});
-  } else {video.src=url;}
+    _hls.on(Hls.Events.ERROR,(ev,d)=>{
+      if(!d.fatal)return;
+      if(d.type===Hls.ErrorTypes.NETWORK_ERROR){
+        _hls.startLoad();
+      }else if(d.type===Hls.ErrorTypes.MEDIA_ERROR&&_mediaErrCount<2){
+        _mediaErrCount++;
+        _hls.recoverMediaError();
+      }else{
+        const msg=d.type===Hls.ErrorTypes.NETWORK_ERROR?'网络错误，源可能已失效':'媒体解码失败';
+        toast(msg,'error');
+      }
+    });
+  }else if(isM3u8&&typeof video.canPlayType==='function'&&video.canPlayType('application/vnd.apple.mpegurl')){
+    // Safari / iOS 原生 HLS 支持
+    video.src=url;video.play().catch(()=>{});
+  }else{
+    video.src=url;
+  }
 }
 function closePlayer(){
   document.getElementById('playerModal').classList.remove('active');

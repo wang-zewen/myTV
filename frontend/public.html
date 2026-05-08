@@ -457,7 +457,7 @@ async function openEmbyDetail(v){
       $('epTotal').textContent=eps.length?eps.length+'集':'';
       if(!eps.length){$('epGrid').innerHTML='<span style="color:var(--dim);font-size:12px">暂无剧集</span>';return;}
       $('epGrid').innerHTML=eps.map((ep,i)=>`
-        <button class="ep" onclick="embyDirectPlay('${ep.id}')">
+        <button class="ep" id="embyEp${i}" onclick="embyDirectPlay('${ep.id}',${i})">
           S${ep.season}E${ep.episode} ${esc(ep.name)}
         </button>`).join('');
     }catch(e){$('epGrid').innerHTML='<span style="color:#f87171;font-size:12px">加载失败</span>';}
@@ -468,13 +468,18 @@ async function openEmbyDetail(v){
   }
 }
 
-async function embyDirectPlay(itemId){
+async function embyDirectPlay(itemId,epIdx){
+  if(epIdx!==undefined){
+    document.querySelectorAll('#epGrid .ep').forEach((b,i)=>b.classList.toggle('on',i===epIdx));
+    document.getElementById('embyEp'+epIdx)?.scrollIntoView({block:'nearest',inline:'center'});
+  }
   try{
     const r=await fetch(`/api/emby/direct/${itemId}`);
+    if(!r.ok){throw new Error('HTTP '+r.status);}
     const d=await r.json();
     startPlay($('player'),d.url);
     $('playerErr').style.display='none';
-  }catch(e){$('playerErrMsg').textContent='获取直链失败';$('playerErr').style.display='flex';}
+  }catch(e){$('playerErrMsg').textContent='获取直链失败：'+e.message;$('playerErr').style.display='flex';}
 }
 
 // ── search ─────────────────────────────────────────────────────
@@ -567,12 +572,30 @@ function playEp(idx){
 function startPlay(video,url){
   stopPlayer();
   $('playerErr').style.display='none';
-  if(Hls.isSupported()&&/\.m3u8/i.test(url)){
-    hlsInst=new Hls({enableWorker:true});
+  const isM3u8=/\.m3u8/i.test(url);
+  if(isM3u8&&typeof Hls!=='undefined'&&Hls.isSupported()){
+    let mediaErrCount=0;
+    hlsInst=new Hls({enableWorker:true,maxBufferLength:30});
     hlsInst.loadSource(url);
     hlsInst.attachMedia(video);
     hlsInst.on(Hls.Events.MANIFEST_PARSED,()=>video.play().catch(()=>{}));
-    hlsInst.on(Hls.Events.ERROR,(_,d)=>{if(d.fatal){$('playerErrMsg').textContent='HLS 加载失败';$('playerErr').style.display='flex';}});
+    hlsInst.on(Hls.Events.ERROR,(_,d)=>{
+      if(!d.fatal)return;
+      if(d.type===Hls.ErrorTypes.NETWORK_ERROR){
+        hlsInst.startLoad();
+      }else if(d.type===Hls.ErrorTypes.MEDIA_ERROR&&mediaErrCount<2){
+        mediaErrCount++;
+        hlsInst.recoverMediaError();
+      }else{
+        const msg=d.type===Hls.ErrorTypes.NETWORK_ERROR?'网络错误，源不可用':'媒体解码失败，格式不兼容';
+        $('playerErrMsg').textContent=msg;
+        $('playerErr').style.display='flex';
+      }
+    });
+  }else if(isM3u8&&video.canPlayType('application/vnd.apple.mpegurl')){
+    // Safari / iOS 原生 HLS 支持
+    video.src=url;
+    video.play().catch(()=>{});
   }else{
     video.src=url;
     video.play().catch(()=>{});

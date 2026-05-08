@@ -26,6 +26,18 @@ from pydantic import BaseModel
 app = FastAPI(title="StreamVault")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+_HTTP_LIMITS = httpx.Limits(max_connections=30, max_keepalive_connections=10)
+_HTTP_TIMEOUT = httpx.Timeout(12.0, connect=5.0)
+
+def _make_http_client(**kwargs) -> httpx.AsyncClient:
+    """Shared async HTTP client with consistent timeouts and connection limits."""
+    return httpx.AsyncClient(
+        follow_redirects=True,
+        timeout=_HTTP_TIMEOUT,
+        limits=_HTTP_LIMITS,
+        **kwargs,
+    )
+
 _BASE_DIR = Path(os.environ.get("STREAMVAULT_HOME", Path(__file__).parent))
 VIDEO_DIR = Path(os.environ.get("STREAMVAULT_VIDEO_DIR", str(_BASE_DIR / "videos")))
 VIDEO_DIR.mkdir(parents=True, exist_ok=True)
@@ -374,10 +386,15 @@ async def _run_download_core(task_id: str, url: str, output_name: str):
 # ─── 采集站搜索 ────────────────────────────────────────
 
 def normalize_api_url(url: str) -> str:
-    url = url.rstrip("/")
+    url = url.strip().rstrip("/")
     if "provide/vod" not in url and url.endswith("api.php"):
         url += "/provide/vod/at/json/"
     return url
+
+def _is_allowed_source_url(url: str) -> bool:
+    """Return True only if url (normalized) matches a configured api_source."""
+    norm = normalize_api_url(url)
+    return any(normalize_api_url(s["url"]) == norm for s in api_sources)
 
 def parse_episodes(play_from: str, play_url_raw: str) -> list:
     if not play_url_raw:
@@ -558,7 +575,9 @@ async def serve_admin():
 
 @app.get("/api/catalog")
 async def catalog(source_url: str, ac: str = "list", pg: int = 1, t: int = 0, ids: str = ""):
-    """代理采集站请求，供公开浏览页调用"""
+    """代理采集站请求，只允许已配置接口，供公开浏览页调用"""
+    if not _is_allowed_source_url(source_url):
+        raise HTTPException(403, "该接口未在系统中配置，拒绝访问")
     base = normalize_api_url(source_url)
     params: dict = {"ac": ac, "pg": pg}
     if t:
@@ -566,12 +585,14 @@ async def catalog(source_url: str, ac: str = "list", pg: int = 1, t: int = 0, id
     if ids:
         params["ids"] = ids
     try:
-        async with httpx.AsyncClient(follow_redirects=True) as client:
+        async with _make_http_client() as client:
             resp = await client.get(base, params=params, timeout=10)
             resp.raise_for_status()
             return resp.json()
     except httpx.TimeoutException:
         raise HTTPException(504, "上游接口超时")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(502, f"上游返回 HTTP {e.response.status_code}")
     except Exception as e:
         raise HTTPException(502, str(e))
 
@@ -584,10 +605,11 @@ async def list_sources():
 
 @app.post("/api/sources")
 async def add_source(src: ApiSource):
+    normalized = normalize_api_url(src.url)
     for s in api_sources:
-        if s["url"] == src.url:
+        if normalize_api_url(s["url"]) == normalized:
             raise HTTPException(400, "该接口已存在")
-    api_sources.append({"name": src.name, "url": src.url, "enabled": True, "tvbox_enabled": True})
+    api_sources.append({"name": src.name.strip(), "url": normalized, "enabled": True, "tvbox_enabled": True})
     save_data()
     return {"ok": True}
 
@@ -595,17 +617,18 @@ async def add_source(src: ApiSource):
 async def edit_source(index: int, src: ApiSource):
     if index < 0 or index >= len(api_sources):
         raise HTTPException(404, "不存在")
+    normalized = normalize_api_url(src.url)
     for i, s in enumerate(api_sources):
-        if i != index and s["url"] == src.url:
+        if i != index and normalize_api_url(s["url"]) == normalized:
             raise HTTPException(400, "该接口地址已存在")
     old_url = api_sources[index]["url"]
-    api_sources[index]["name"] = src.name
-    api_sources[index]["url"] = src.url
+    api_sources[index]["name"] = src.name.strip()
+    api_sources[index]["url"] = normalized
     # 同步更新引用该接口的订阅
     for sub in subscriptions.values():
         if sub.source_url == old_url:
-            sub.source_name = src.name
-            sub.source_url = src.url
+            sub.source_name = src.name.strip()
+            sub.source_url = normalized
     save_data()
     return {"ok": True}
 
@@ -640,7 +663,7 @@ async def delete_source(index: int):
 async def test_source(src: ApiSource):
     base = normalize_api_url(src.url)
     try:
-        async with httpx.AsyncClient(follow_redirects=True) as client:
+        async with _make_http_client() as client:
             resp = await client.get(base, params={"ac": "detail", "wd": "test"}, timeout=8)
             resp.raise_for_status()
             text = resp.text.strip()
@@ -789,13 +812,21 @@ async def disk_space():
 @app.get("/api/videos")
 async def list_videos():
     videos = []
-    for f in sorted(VIDEO_DIR.iterdir(), key=lambda x: x.stat().st_ctime, reverse=True):
-        if f.suffix.lower() in [".mp4", ".mkv", ".ts", ".m4v"]:
+    try:
+        entries = sorted(VIDEO_DIR.iterdir(), key=lambda x: x.stat().st_ctime, reverse=True)
+    except OSError:
+        return []
+    for f in entries:
+        if f.suffix.lower() not in {".mp4", ".mkv", ".ts", ".m4v"}:
+            continue
+        try:
             stat = f.stat()
-            videos.append({"name": f.stem, "filename": f.name,
-                "size_mb": round(stat.st_size / 1024 / 1024, 2),
-                "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                "url": f"/api/stream/{f.name}"})
+        except OSError:
+            continue
+        videos.append({"name": f.stem, "filename": f.name,
+            "size_mb": round(stat.st_size / 1024 / 1024, 2),
+            "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+            "url": f"/api/stream/{f.name}"})
     return videos
 
 @app.delete("/api/videos/{filename}")
@@ -813,12 +844,17 @@ async def stream_video(filename: str):
     if "/" in filename or ".." in filename:
         raise HTTPException(400, "非法文件名")
     path = VIDEO_DIR / filename
-    if not path.exists():
+    try:
+        resolved = path.resolve()
+        resolved.relative_to(VIDEO_DIR.resolve())
+    except (ValueError, OSError):
+        raise HTTPException(403, "拒绝访问")
+    if not resolved.exists():
         raise HTTPException(404, "文件不存在")
-    suffix = path.suffix.lower()
+    suffix = resolved.suffix.lower()
     media_types = {".mp4": "video/mp4", ".mkv": "video/x-matroska",
                    ".ts": "video/mp2t", ".m4v": "video/mp4"}
-    return FileResponse(path, media_type=media_types.get(suffix, "video/mp4"))
+    return FileResponse(resolved, media_type=media_types.get(suffix, "video/mp4"))
 
 
 # ── 订阅管理 ──

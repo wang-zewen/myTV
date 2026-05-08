@@ -29,8 +29,6 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 _BASE_DIR = Path(os.environ.get("STREAMVAULT_HOME", Path(__file__).parent))
 VIDEO_DIR = Path(os.environ.get("STREAMVAULT_VIDEO_DIR", str(_BASE_DIR / "videos")))
 VIDEO_DIR.mkdir(parents=True, exist_ok=True)
-EMBY_VIDEO_DIR = VIDEO_DIR / "emby"
-EMBY_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
 
 DATA_FILE = Path(os.environ.get("STREAMVAULT_DATA_FILE", str(_BASE_DIR / "data.json")))
 DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -132,8 +130,6 @@ class SubscribeRequest(BaseModel):
     vod_pic: Optional[str] = ""
     download_existing: bool = False  # True=补全已有集，False=只追新集
 
-class EmbyCacheRequest(BaseModel):
-    name: Optional[str] = None
 
 
 # ─── Task ──────────────────────────────────────────────
@@ -187,18 +183,6 @@ def _find_output_file(output_name: str):
     ]
     return max(candidates, key=lambda p: p.stat().st_size) if candidates else None
 
-
-def _find_emby_output_file(output_name: str):
-    """在 Emby 专属目录中查找缓存文件"""
-    for ext in _VIDEO_EXTS:
-        p = EMBY_VIDEO_DIR / f"{output_name}{ext}"
-        if p.exists():
-            return p
-    candidates = [
-        p for p in EMBY_VIDEO_DIR.glob(f"{output_name}*")
-        if p.suffix.lower() in _VIDEO_EXTS
-    ]
-    return max(candidates, key=lambda p: p.stat().st_size) if candidates else None
 
 
 def _verify_file(path: Path) -> tuple:
@@ -1095,69 +1079,6 @@ app.mount("/videos", StaticFiles(directory=str(VIDEO_DIR)), name="videos")
 
 # ── Emby 集成 ──────────────────────────────────────────
 
-async def _emby_stream_download(task_id: str, stream_url: str, output_name: str):
-    """通过 httpx 流式下载 Emby 视频文件（API Key 留在服务端）"""
-    task = tasks[task_id]
-    out_path: Optional[Path] = None
-    try:
-        timeout = httpx.Timeout(connect=30, read=None, write=None, pool=30)
-        async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
-            async with client.stream("GET", stream_url) as r:
-                r.raise_for_status()
-                # 从 Content-Disposition 或 Content-Type 推断扩展名
-                ext = ".mp4"
-                cd = r.headers.get("content-disposition", "")
-                ct = r.headers.get("content-type", "").split(";")[0].strip()
-                if cd and "filename" in cd:
-                    m = re.search(r'filename[*]?=["\']?(?:UTF-8\'\')?([^"\';\r\n]+)', cd)
-                    if m:
-                        g = Path(m.group(1).strip().strip('"').strip("'")).suffix.lower()
-                        if g in _VIDEO_EXTS:
-                            ext = g
-                elif ct == "video/x-matroska":
-                    ext = ".mkv"
-                out_path = EMBY_VIDEO_DIR / f"{output_name}{ext}"
-                total = int(r.headers.get("content-length", 0) or 0)
-                downloaded = 0
-                task.log_lines.append(
-                    f"[Emby缓存] 开始下载{f'，总大小 {total//1024//1024} MB' if total else ''}...")
-                with open(out_path, "wb") as f:
-                    async for chunk in r.aiter_bytes(chunk_size=256 * 1024):
-                        while task.status == "paused":
-                            await asyncio.sleep(1)
-                        if task.status == "cancelled":
-                            break
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if total:
-                            task.progress = round(downloaded / total * 100, 1)
-                        mb = downloaded // 1024 // 1024
-                        if mb > 0 and (downloaded % (10 * 1024 * 1024)) < (256 * 1024):
-                            line = f"[进度] {task.progress:.1f}% - {mb} MB"
-                            if total:
-                                line += f" / {total//1024//1024} MB"
-                            task.log_lines.append(line)
-                if task.status == "cancelled":
-                    try:
-                        out_path.unlink(missing_ok=True)
-                    except Exception:
-                        pass
-                    return
-        task.status = "done"
-        task.progress = 100
-        size_mb = out_path.stat().st_size / 1024 / 1024
-        task.log_lines.append(f"[完成] {out_path.name}（{size_mb:.1f} MB）")
-    except Exception as e:
-        task.status = "error"
-        task.error = str(e)
-        task.log_lines.append(f"[错误] {e}")
-        if out_path and out_path.exists():
-            try:
-                out_path.unlink(missing_ok=True)
-            except Exception:
-                pass
-
-
 @app.get("/api/emby/status")
 async def emby_status():
     return {
@@ -1319,27 +1240,6 @@ async def emby_episodes(series_id: str):
         raise HTTPException(502, str(e))
 
 
-@app.post("/api/emby/cache/{item_id}")
-async def emby_cache(item_id: str, req: EmbyCacheRequest):
-    url = emby_config.get("url", "")
-    api_key = emby_config.get("api_key", "")
-    if not url or not api_key:
-        raise HTTPException(400, "Emby 未配置")
-    raw = req.name or f"emby_{item_id[:8]}"
-    name = _safe_filename(re.sub(r'[^\w一-鿿\-]', '_', raw)) or f"emby_{item_id[:8]}"
-    existing = _find_emby_output_file(name)
-    if existing:
-        return {"task_id": None, "cached": True,
-                "filename": existing.name, "url": f"/api/emby/stream/{existing.name}"}
-    stream_url = f"{url}/Items/{item_id}/Download?api_key={api_key}"
-    task_id = str(uuid.uuid4())
-    task = TaskStatus(task_id, name, stream_url, source="emby")
-    task.log_lines.append("[Emby] 准备缓存下载...")
-    tasks[task_id] = task
-    asyncio.create_task(_emby_stream_download(task_id, stream_url, name))
-    return {"task_id": task_id, "cached": False}
-
-
 @app.get("/api/emby/image/{item_id}")
 async def emby_image(item_id: str):
     """代理 Emby 封面图片，API Key 不暴露给浏览器"""
@@ -1361,50 +1261,6 @@ async def emby_image(item_id: str):
             )
     except Exception:
         raise HTTPException(404, "图片不可用")
-
-
-@app.get("/api/emby/cached")
-async def list_emby_cached():
-    """列出 Emby 缓存视频（在独立目录，不混入普通视频库）"""
-    videos = []
-    if not EMBY_VIDEO_DIR.exists():
-        return videos
-    for f in sorted(EMBY_VIDEO_DIR.iterdir(), key=lambda x: x.stat().st_ctime, reverse=True):
-        if f.suffix.lower() in _VIDEO_EXTS:
-            stat = f.stat()
-            videos.append({
-                "name": f.stem,
-                "filename": f.name,
-                "size_mb": round(stat.st_size / 1024 / 1024, 2),
-                "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                "url": f"/api/emby/stream/{f.name}",
-            })
-    return videos
-
-
-@app.get("/api/emby/stream/{filename}")
-async def stream_emby_video(filename: str):
-    """从 Emby 缓存目录流式播放，与普通视频库隔离"""
-    if "/" in filename or ".." in filename:
-        raise HTTPException(400, "非法文件名")
-    path = EMBY_VIDEO_DIR / filename
-    if not path.exists():
-        raise HTTPException(404, "文件不存在")
-    suffix = path.suffix.lower()
-    media_types = {".mp4": "video/mp4", ".mkv": "video/x-matroska",
-                   ".ts": "video/mp2t", ".m4v": "video/mp4"}
-    return FileResponse(path, media_type=media_types.get(suffix, "video/mp4"))
-
-
-@app.delete("/api/emby/cached/{filename}")
-async def delete_emby_cached(filename: str):
-    if "/" in filename or ".." in filename:
-        raise HTTPException(400, "非法文件名")
-    path = EMBY_VIDEO_DIR / filename
-    if not path.exists():
-        raise HTTPException(404, "文件不存在")
-    path.unlink()
-    return {"ok": True}
 
 
 @app.get("/api/emby/direct/{item_id}")

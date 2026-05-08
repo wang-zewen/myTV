@@ -1487,6 +1487,9 @@ async def emby_items(parent_id: str = "", pg: int = 1, limit: int = 40):
                 continue
             has_img = bool((i.get("ImageTags") or {}).get("Primary"))
             thumb = f"/api/emby/image/{i['Id']}" if has_img else ""
+            people = i.get("People") or []
+            actors = [{"id": p.get("Id", ""), "name": p.get("Name", ""), "role": p.get("Role", "")}
+                      for p in people if p.get("Name") and p.get("Type") in {"Actor", "GuestStar", "Director", "Writer"}]
             items.append({
                 "id": i["Id"],
                 "name": i.get("Name", ""),
@@ -1495,6 +1498,8 @@ async def emby_items(parent_id: str = "", pg: int = 1, limit: int = 40):
                 "overview": (i.get("Overview") or "")[:200],
                 "thumb": thumb,
                 "rating": i.get("OfficialRating", ""),
+                "genres": i.get("Genres") or [],
+                "people": actors[:8],
             })
         return items
 
@@ -1503,7 +1508,7 @@ async def emby_items(parent_id: str = "", pg: int = 1, limit: int = 40):
             params = {
                 "IncludeItemTypes": "Movie,Series",
                 "Recursive": "true",
-                "Fields": "PrimaryImageAspectRatio,Overview,ProductionYear,OfficialRating",
+                "Fields": "PrimaryImageAspectRatio,Overview,ProductionYear,OfficialRating,People,Genres,Studios,Taglines",
                 "StartIndex": (pg - 1) * limit,
                 "Limit": limit,
                 "SortBy": "SortName",
@@ -1548,6 +1553,94 @@ async def emby_items(parent_id: str = "", pg: int = 1, limit: int = 40):
             total = len(dedup)
             start = max(0, (pg - 1) * limit)
             return {"items": dedup[start:start+limit], "total": total, "page": pg}
+    except Exception as e:
+        raise HTTPException(502, str(e))
+
+
+@app.get("/api/emby/detail/{item_id}")
+async def emby_detail(item_id: str):
+    url = emby_config.get("url", "")
+    api_key = emby_config.get("api_key", "")
+    user_id = emby_config.get("user_id", "")
+    if not url or not api_key or not user_id:
+        raise HTTPException(400, "Emby 未完整配置")
+    try:
+        async with _make_http_client() as client:
+            r = await client.get(
+                f"{url}/Users/{user_id}/Items/{item_id}",
+                headers={"X-Emby-Token": api_key},
+                params={"Fields": "Overview,ProductionYear,OfficialRating,People,Genres,Studios,Taglines,CommunityRating,PremiereDate,RunTimeTicks"},
+                timeout=12,
+            )
+            r.raise_for_status()
+            item = r.json()
+            people = item.get("People") or []
+            people_out = [{
+                "id": p.get("Id", ""),
+                "name": p.get("Name", ""),
+                "type": p.get("Type", ""),
+                "role": p.get("Role", ""),
+            } for p in people if p.get("Name")]
+            return {
+                "id": item.get("Id", item_id),
+                "name": item.get("Name", ""),
+                "type": item.get("Type", "Movie"),
+                "year": item.get("ProductionYear", ""),
+                "overview": item.get("Overview", ""),
+                "rating": item.get("OfficialRating", ""),
+                "community_rating": item.get("CommunityRating", ""),
+                "premiere_date": item.get("PremiereDate", ""),
+                "genres": item.get("Genres") or [],
+                "studios": [s.get("Name", "") for s in (item.get("Studios") or []) if s.get("Name")],
+                "taglines": item.get("Taglines") or [],
+                "people": people_out,
+            }
+    except Exception as e:
+        raise HTTPException(502, str(e))
+
+
+@app.get("/api/emby/person/{person_id}")
+async def emby_person_items(person_id: str, pg: int = 1, limit: int = 40):
+    url = emby_config.get("url", "")
+    api_key = emby_config.get("api_key", "")
+    user_id = emby_config.get("user_id", "")
+    if not url or not api_key or not user_id:
+        raise HTTPException(400, "Emby 未完整配置")
+    try:
+        async with _make_http_client() as client:
+            params = {
+                "PersonIds": person_id,
+                "IncludeItemTypes": "Movie,Series",
+                "Recursive": "true",
+                "Fields": "PrimaryImageAspectRatio,Overview,ProductionYear,OfficialRating,People,Genres",
+                "StartIndex": (pg - 1) * limit,
+                "Limit": limit,
+                "SortBy": "SortName",
+                "SortOrder": "Ascending",
+            }
+            r = await client.get(f"{url}/Users/{user_id}/Items",
+                                 headers={"X-Emby-Token": api_key},
+                                 params=params, timeout=12)
+            r.raise_for_status()
+            data = r.json()
+            items = []
+            for i in data.get("Items", []):
+                if i.get("Type") not in {"Movie", "Series"}:
+                    continue
+                has_img = bool((i.get("ImageTags") or {}).get("Primary"))
+                thumb = f"/api/emby/image/{i['Id']}" if has_img else ""
+                items.append({
+                    "id": i["Id"],
+                    "name": i.get("Name", ""),
+                    "type": i.get("Type", "Movie"),
+                    "year": i.get("ProductionYear", ""),
+                    "overview": (i.get("Overview") or "")[:200],
+                    "thumb": thumb,
+                    "rating": i.get("OfficialRating", ""),
+                    "genres": i.get("Genres") or [],
+                    "people": [],
+                })
+            return {"items": items, "total": data.get("TotalRecordCount", len(items)), "page": pg}
     except Exception as e:
         raise HTTPException(502, str(e))
 

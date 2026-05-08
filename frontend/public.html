@@ -229,6 +229,7 @@ let embyStatus={configured:false,need_auth:false};
 let _playerReadyBound=false;
 let embyLibraries=[], curEmbyLib='', embyPage=1, embyTotal=0;
 let curEmbyItem=null;
+let curEmbyPerson=null;
 
 // ── init ──────────────────────────────────────────────────────
 async function init(){
@@ -473,11 +474,27 @@ async function openEmbyDetail(v){
   showDetail();
   $('dvCrumb').textContent='Emby';
   $('dvTitle').textContent=v.name;
-  $('dvMeta').textContent=v.year?`${v.year}  ·  ${v.type==='Series'?'剧集':'电影'}`:v.type==='Series'?'剧集':'电影';
+  $('dvMeta').textContent='加载详情中...';
   $('dvDesc').textContent=v.overview||'';
   $('epSection').style.display='none';
   $('embyActions').style.display='none';
   stopPlayer();
+  try{
+    const dr=await fetch(`/api/emby/detail/${v.id}`);
+    const detail=await dr.json();
+    if(dr.ok){
+      const directors=(detail.people||[]).filter(p=>p.type==='Director').map(p=>p.name).slice(0,2);
+      const actors=(detail.people||[]).filter(p=>p.type==='Actor' || p.type==='GuestStar');
+      $('dvMeta').innerHTML=[
+        detail.year||'',
+        detail.type==='Series'?'剧集':'电影',
+        detail.rating?`分级：${esc(detail.rating)}`:'',
+        directors.length?`导演：${esc(directors.join('、'))}`:'',
+        detail.genres&&detail.genres.length?`类型：${esc(detail.genres.slice(0,3).join(' / '))}`:''
+      ].filter(Boolean).join('  ·  ');
+      $('dvDesc').innerHTML=`${esc(detail.overview||v.overview||'')}${actors.length?`<div class="meta-chips">${actors.slice(0,12).map(p=>`<button class="meta-chip person-chip" onclick="openEmbyPerson('${p.id}','${esc(p.name)}')">👤 ${esc(p.name)}</button>`).join('')}</div>`:''}`;
+    }
+  }catch(e){}
   if(v.type==='Series'){
     $('epSection').style.display='block';
     $('epTotal').textContent='加载中...';
@@ -493,7 +510,6 @@ async function openEmbyDetail(v){
         </button>`).join('');
     }catch(e){$('epGrid').innerHTML='<span style="color:#f87171;font-size:12px">加载失败</span>';}
   } else {
-    // Movie
     $('embyActions').style.display='block';
     $('embyDirectBtn').onclick=()=>embyDirectPlay(v.id);
   }
@@ -511,6 +527,25 @@ async function embyDirectPlay(itemId,epIdx){
     startPlay($('player'),d.url);
     $('playerErr').style.display='none';
   }catch(e){$('playerErrMsg').textContent='获取直链失败：'+e.message;$('playerErr').style.display='flex';}
+}
+
+async function openEmbyPerson(personId, personName){
+  curSrc=EMBY;isEmby=true;isLocal=false;isSearch=false;curEmbyPerson={id:personId,name:personName};
+  stopPlayer();
+  showBrowse();
+  $('catOuter').style.display='none';
+  setGrid(skelHtml(12));
+  $('secHd').innerHTML=secHdHtml(`演员：${personName}`,'加载中...');
+  try{
+    const r=await fetch(`/api/emby/person/${personId}?pg=1&limit=40`);
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.detail||'演员作品加载失败');
+    vodArr=(d.items||[]).map(i=>({...i,__emby:true}));
+    embyTotal=d.total||vodArr.length;
+    $('secHd').innerHTML=secHdHtml(`演员：${personName}`, `${embyTotal} 个`);
+    renderEmbyGrid(vodArr,true);
+    $('moreWrap').style.display='none';
+  }catch(e){setGrid(emptyHtml('⚠️','加载失败', e && e.message ? e.message : '演员作品加载失败'));}
 }
 
 // ── search ─────────────────────────────────────────────────────

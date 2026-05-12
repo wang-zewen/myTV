@@ -491,9 +491,30 @@ input::placeholder{color:var(--muted);}
 
   <div class="page" id="page-emby">
     <div class="page-title">Emby 接入</div>
-    <div class="page-sub">配置 Emby 服务器，在公开页面提供受密码保护的 Emby 媒体浏览</div>
+    <div class="page-sub">支持多个 Emby 源：可分别配置公开库、私密库、独立密码、库白名单/隐藏和 TVBox 暴露</div>
     <div class="card">
-      <div class="slabel">Emby 服务器</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+        <div>
+          <div class="slabel">Emby 源列表</div>
+          <div style="font-size:13px;color:var(--muted)">每个 Emby 源可独立配置名称、密码、库过滤和 TVBox 暴露</div>
+        </div>
+        <button class="btn btn-primary" id="addEmbyServerBtn">+ 新增 Emby 源</button>
+      </div>
+      <div id="embyServerList"></div>
+    </div>
+
+    <div class="card">
+      <div class="slabel">编辑当前 Emby 源</div>
+      <div class="form-row">
+        <div class="form-group" style="max-width:240px">
+          <div class="slabel">当前源</div>
+          <select id="embyServerSelect"></select>
+        </div>
+        <div class="form-group">
+          <div class="slabel">显示名称</div>
+          <input id="embyName" type="text" placeholder="例如：公开 Emby / 私密 Emby"/>
+        </div>
+      </div>
       <div class="form-row">
         <div class="form-group">
           <div class="slabel">服务器地址</div>
@@ -511,15 +532,40 @@ input::placeholder{color:var(--muted);}
         </div>
         <button class="btn btn-ghost" id="embyAutoUserBtn" style="white-space:nowrap">自动获取</button>
       </div>
-      <div style="display:flex;gap:10px;margin-top:6px">
+      <div class="form-row">
+        <div class="form-group" style="max-width:220px">
+          <div class="slabel">启用</div>
+          <select id="embyEnabled"><option value="true">启用</option><option value="false">禁用</option></select>
+        </div>
+        <div class="form-group" style="max-width:220px">
+          <div class="slabel">TVBox 暴露</div>
+          <select id="embyTvboxEnabled"><option value="true">显示</option><option value="false">隐藏</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <div class="slabel">仅允许的媒体库 ID（白名单）</div>
+          <input id="embyAllowedLibs" type="text" placeholder="多个 ID 用逗号分隔；留空表示不过滤"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <div class="slabel">隐藏的媒体库 ID（黑名单）</div>
+          <input id="embyHiddenLibs" type="text" placeholder="多个 ID 用逗号分隔；优先于显示"/>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
         <button class="btn btn-primary" id="saveEmbyBtn">保存配置</button>
         <button class="btn btn-ghost" id="testEmbyBtn">测试连接</button>
+        <button class="btn btn-ghost" id="loadEmbyLibrariesBtn">读取媒体库</button>
+        <button class="btn btn-danger" id="deleteEmbyBtn">删除当前源</button>
       </div>
       <div id="embyTestResult" style="margin-top:10px;font-size:13px;font-family:'DM Mono',monospace;min-height:18px;"></div>
     </div>
+
     <div class="card">
-      <div class="slabel">Emby 区域访问密码</div>
-      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">在公开页面浏览 Emby 需要输入此密码。留空则任何人均可访问。</p>
+      <div class="slabel">当前 Emby 源访问密码</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">给当前 Emby 源单独设密码。适合把成人内容做成单独私密入口。</p>
       <div class="form-row">
         <div class="form-group">
           <div class="slabel">密码</div>
@@ -532,9 +578,15 @@ input::placeholder{color:var(--muted);}
       </div>
       <button class="btn btn-primary" id="saveEmbyPwdBtn">保存密码</button>
     </div>
+
     <div class="card" id="embyStatusCard" style="display:none">
       <div class="slabel">当前状态</div>
       <div id="embyStatusInfo" style="font-size:13px;color:var(--muted);line-height:1.8"></div>
+    </div>
+
+    <div class="card" id="embyLibrariesCard" style="display:none">
+      <div class="slabel">当前源可见媒体库</div>
+      <div id="embyLibrariesInfo" style="font-size:13px;color:var(--muted);line-height:1.8"></div>
     </div>
   </div>
 
@@ -1234,56 +1286,126 @@ document.getElementById('savePwdBtn').addEventListener('click',async()=>{
 });
 
 // ── Emby 配置 ──────────────────────────────────────────
+let _embyServers=[];
+let _currentEmbyServerId='';
+
+function _splitCsvIds(v){return String(v||'').split(',').map(x=>x.trim()).filter(Boolean);}
+function _joinIds(arr){return (arr||[]).join(', ');}
+function _findCurrentEmbyServer(){return _embyServers.find(s=>s.id===_currentEmbyServerId)||_embyServers[0]||null;}
+
+function renderEmbyServerList(){
+  const wrap=document.getElementById('embyServerList');
+  if(!wrap)return;
+  if(!_embyServers.length){wrap.innerHTML='<div style="font-size:13px;color:var(--muted)">暂无 Emby 源，点击右上角新增。</div>';return;}
+  wrap.innerHTML=_embyServers.map(s=>`<div class="source-item" style="cursor:pointer;${s.id===_currentEmbyServerId?'border-color:rgba(99,102,241,.45);background:rgba(99,102,241,.04);':''}" onclick="selectEmbyServer('${s.id}')"><div class="source-dot" style="background:${s.enabled!==false?'var(--green)':'var(--muted)'}"></div><div class="source-info"><div class="source-name">${esc(s.name||s.id)}${s.has_password?'<span style="font-size:11px;color:var(--orange);margin-left:8px">🔒 已加密</span>':''}${s.tvbox_enabled===false?'<span style="font-size:11px;color:var(--muted);margin-left:8px">(TVBox 隐藏)</span>':''}</div><div class="source-url">${esc(s.url||'未配置地址')} · 用户 ${esc(s.user_id||'未设置')} · ${s.has_filters?'已做库过滤':'未过滤库'}</div></div></div>`).join('');
+}
+
+function renderEmbyServerSelect(){
+  const sel=document.getElementById('embyServerSelect');
+  if(!sel)return;
+  sel.innerHTML=_embyServers.map(s=>`<option value="${esc(s.id)}">${esc(s.name||s.id)}</option>`).join('');
+  if(_currentEmbyServerId) sel.value=_currentEmbyServerId;
+}
+
+function fillEmbyServerForm(server){
+  document.getElementById('embyName').value=server?.name||'';
+  document.getElementById('embyUrl').value=server?.url||'';
+  document.getElementById('embyUserId').value=server?.user_id||'';
+  document.getElementById('embyApiKey').value='';
+  document.getElementById('embyEnabled').value=String(server?.enabled!==false);
+  document.getElementById('embyTvboxEnabled').value=String(server?.tvbox_enabled!==false);
+  document.getElementById('embyAllowedLibs').value=_joinIds(server?.allowed_library_ids||[]);
+  document.getElementById('embyHiddenLibs').value=_joinIds(server?.hidden_library_ids||[]);
+  const card=document.getElementById('embyStatusCard');
+  const info=document.getElementById('embyStatusInfo');
+  if(server){
+    card.style.display='block';
+    info.innerHTML=`名称：${esc(server.name||server.id)}<br>`+
+      `服务器：${esc(server.url||'未配置')}<br>`+
+      `API Key：${server.has_api_key?'已设置（已隐藏）':'未设置'}<br>`+
+      `用户 ID：${esc(server.user_id||'未设置')}<br>`+
+      `访问密码：${server.has_password?'已设置':'未设置'}<br>`+
+      `TVBox：${server.tvbox_enabled===false?'已隐藏':'已显示'}<br>`+
+      `库过滤：${server.has_filters?'已启用':'未启用'}`;
+  }else card.style.display='none';
+}
+
+function selectEmbyServer(id){
+  _currentEmbyServerId=id;
+  renderEmbyServerList();
+  renderEmbyServerSelect();
+  fillEmbyServerForm(_findCurrentEmbyServer());
+}
+
 async function loadEmbyConfig(){
   try{
-    const r=await fetch('/api/emby/config');const c=await r.json();
-    document.getElementById('embyUrl').value=c.url||'';
-    document.getElementById('embyUserId').value=c.user_id||'';
-    if(c.url||c.has_api_key){
-      const card=document.getElementById('embyStatusCard');
-      card.style.display='block';
-      document.getElementById('embyStatusInfo').innerHTML=
-        `服务器：${esc(c.url||'未配置')}<br>`+
-        `API Key：${c.has_api_key?'已设置（已隐藏）':'未设置'}<br>`+
-        `用户 ID：${esc(c.user_id||'未设置')}<br>`+
-        `访问密码：${c.has_password?'已设置':'未设置'}`;
+    const r=await fetch('/api/emby/servers');
+    _embyServers=await r.json();
+    if(!_embyServers.length){
+      _currentEmbyServerId='';
+      renderEmbyServerList();
+      renderEmbyServerSelect();
+      fillEmbyServerForm(null);
+      return;
     }
+    if(!_currentEmbyServerId || !_embyServers.some(s=>s.id===_currentEmbyServerId)) _currentEmbyServerId=_embyServers[0].id;
+    renderEmbyServerList();
+    renderEmbyServerSelect();
+    fillEmbyServerForm(_findCurrentEmbyServer());
   }catch(e){}
 }
+
+document.getElementById('embyServerSelect').addEventListener('change',e=>selectEmbyServer(e.target.value));
+document.getElementById('addEmbyServerBtn').addEventListener('click',async()=>{
+  const name=prompt('新 Emby 源名称');
+  if(!name)return;
+  const id=(name.trim().toLowerCase().replace(/[^a-z0-9_-]+/g,'-')||('emby-'+Date.now()));
+  const r=await fetch('/api/emby/servers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,name})});
+  if(r.ok){toast('已新增 Emby 源');await loadEmbyConfig();selectEmbyServer(id);} else {const d=await r.json().catch(()=>({}));toast(d.detail||'新增失败','error');}
+});
 document.getElementById('saveEmbyBtn').addEventListener('click',async()=>{
+  const server=_findCurrentEmbyServer();
+  if(!server){toast('请先新增 Emby 源','error');return;}
   const url=document.getElementById('embyUrl').value.trim();
   const apiKey=document.getElementById('embyApiKey').value.trim();
   const userId=document.getElementById('embyUserId').value.trim();
+  const name=document.getElementById('embyName').value.trim();
+  if(!name){toast('请填写显示名称','error');return;}
   if(!url){toast('请填写服务器地址','error');return;}
-  const body={url};
+  const body={name,url,user_id:userId,enabled:document.getElementById('embyEnabled').value==='true',tvbox_enabled:document.getElementById('embyTvboxEnabled').value==='true',allowed_library_ids:_splitCsvIds(document.getElementById('embyAllowedLibs').value),hidden_library_ids:_splitCsvIds(document.getElementById('embyHiddenLibs').value)};
   if(apiKey) body.api_key=apiKey;
-  body.user_id=userId;
-  const r=await fetch('/api/emby/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const r=await fetch(`/api/emby/servers/${encodeURIComponent(server.id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(r.ok){toast('Emby 配置已保存');document.getElementById('embyApiKey').value='';loadEmbyConfig();}
-  else toast('保存失败','error');
+  else {const d=await r.json().catch(()=>({}));toast(d.detail||'保存失败','error');}
 });
 document.getElementById('testEmbyBtn').addEventListener('click',async()=>{
+  const server=_findCurrentEmbyServer();
+  if(!server){toast('请先新增 Emby 源','error');return;}
   const btn=document.getElementById('testEmbyBtn');
   const res=document.getElementById('embyTestResult');
   btn.disabled=true;btn.textContent='测试中...';res.textContent='';
   try{
     const url=document.getElementById('embyUrl').value.trim();
     const apiKey=document.getElementById('embyApiKey').value.trim();
-    if(url&&apiKey){
-      const save=await fetch('/api/emby/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,api_key:apiKey})});
-      if(!save.ok){res.textContent='保存临时配置失败';return;}
+    if(url||apiKey){
+      const saveBody={name:document.getElementById('embyName').value.trim()||server.name,url:url||server.url,user_id:document.getElementById('embyUserId').value.trim()||server.user_id,enabled:document.getElementById('embyEnabled').value==='true',tvbox_enabled:document.getElementById('embyTvboxEnabled').value==='true',allowed_library_ids:_splitCsvIds(document.getElementById('embyAllowedLibs').value),hidden_library_ids:_splitCsvIds(document.getElementById('embyHiddenLibs').value)};
+      if(apiKey) saveBody.api_key=apiKey;
+      await fetch(`/api/emby/servers/${encodeURIComponent(server.id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(saveBody)});
     }
-    const r=await fetch('/api/emby/test',{method:'POST'});
+    const r=await fetch(`/api/emby/test?server_id=${encodeURIComponent(server.id)}`,{method:'POST'});
     const d=await r.json();
     res.style.color=d.ok?'var(--green)':'var(--red)';
     res.textContent=d.ok?`✓ ${d.msg}`:`✗ ${d.error}`;
+    await loadEmbyConfig();
   }finally{btn.disabled=false;btn.textContent='测试连接';}
 });
 document.getElementById('embyAutoUserBtn').addEventListener('click',async()=>{
+  const server=_findCurrentEmbyServer();
+  if(!server){toast('请先新增 Emby 源','error');return;}
   const btn=document.getElementById('embyAutoUserBtn');
   btn.disabled=true;btn.textContent='获取中...';
   try{
-    const r=await fetch('/api/emby/users');
+    const r=await fetch(`/api/emby/users?server_id=${encodeURIComponent(server.id)}`);
     if(!r.ok){const d=await r.json();toast(d.detail||'获取失败','error');return;}
     const users=await r.json();
     if(!users.length){toast('未找到用户','error');return;}
@@ -1293,16 +1415,38 @@ document.getElementById('embyAutoUserBtn').addEventListener('click',async()=>{
   finally{btn.disabled=false;btn.textContent='自动获取';}
 });
 document.getElementById('saveEmbyPwdBtn').addEventListener('click',async()=>{
+  const server=_findCurrentEmbyServer();
+  if(!server){toast('请先新增 Emby 源','error');return;}
   const p1=document.getElementById('embyPwd').value;
   const p2=document.getElementById('embyPwdConfirm').value;
   if(p1!==p2){toast('两次密码不一致','error');return;}
-  const r=await fetch('/api/emby/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:p1})});
+  const r=await fetch(`/api/emby/servers/${encodeURIComponent(server.id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:p1})});
   if(r.ok){
     document.getElementById('embyPwd').value='';document.getElementById('embyPwdConfirm').value='';
     sessionStorage.removeItem('sv_emby_authed');
-    toast(p1?'Emby 密码已设置':'已取消 Emby 密码保护');
+    toast(p1?'当前 Emby 源密码已设置':'已取消当前 Emby 源密码保护');
     loadEmbyConfig();
   } else toast('保存失败','error');
+});
+document.getElementById('deleteEmbyBtn').addEventListener('click',async()=>{
+  const server=_findCurrentEmbyServer();
+  if(!server){toast('没有可删除的 Emby 源','error');return;}
+  if(!confirm(`确定删除 Emby 源：${server.name||server.id} ？`)) return;
+  const r=await fetch(`/api/emby/servers/${encodeURIComponent(server.id)}`,{method:'DELETE'});
+  if(r.ok){toast('已删除');_currentEmbyServerId='';loadEmbyConfig();} else {const d=await r.json().catch(()=>({}));toast(d.detail||'删除失败','error');}
+});
+document.getElementById('loadEmbyLibrariesBtn').addEventListener('click',async()=>{
+  const server=_findCurrentEmbyServer();
+  if(!server){toast('请先新增 Emby 源','error');return;}
+  try{
+    const r=await fetch(`/api/emby/libraries?server_id=${encodeURIComponent(server.id)}`);
+    const d=await r.json();
+    if(!r.ok){toast(d.detail||'读取失败','error');return;}
+    const card=document.getElementById('embyLibrariesCard');
+    const info=document.getElementById('embyLibrariesInfo');
+    card.style.display='block';
+    info.innerHTML=d.length?d.map(x=>`• ${esc(x.name)} <span style="font-family:'DM Mono',monospace;color:var(--muted)">(${esc(x.id)})</span>`).join('<br>'):'暂无可见媒体库';
+  }catch(e){toast('读取失败','error');}
 });
 
 // ── TVBox ──────────────────────────────────────────────

@@ -113,17 +113,49 @@ button{cursor:pointer;font-family:inherit;}
 
 /* ── detail view ── */
 .dv{display:none;}
-.dv-nav{display:flex;align-items:center;gap:12px;padding:16px 0 20px;}
+.dv-nav{display:flex;align-items:center;gap:12px;padding:16px 0 18px;}
 .back-btn{background:var(--s2);border:1px solid var(--border);border-radius:var(--rsm);padding:8px 16px;font-size:13px;font-weight:600;color:var(--fg2);display:flex;align-items:center;gap:6px;transition:.18s;}
 .back-btn:hover{color:var(--fg);border-color:rgba(99,102,241,.38);background:var(--s3);}
-.dv-crumb{font-size:12px;color:var(--dim);font-weight:500;background:var(--s2);border:1px solid var(--border);padding:4px 10px;border-radius:6px;}
-.player-box{background:#000;border-radius:var(--r);overflow:hidden;aspect-ratio:16/9;position:relative;box-shadow:0 0 0 1px var(--border),0 16px 48px rgba(0,0,0,.18);}
+.dv-crumb{font-size:12px;color:var(--dim);font-weight:500;background:var(--s2);border:1px solid var(--border);padding:5px 12px;border-radius:6px;letter-spacing:.02em;}
+
+/* ── player section frame ── */
+.player-section{background:linear-gradient(180deg,rgba(99,102,241,.04) 0%,rgba(139,92,246,.02) 100%);border:1px solid rgba(99,102,241,.14);border-radius:calc(var(--r) + 6px);padding:10px 10px 14px;box-shadow:0 2px 24px rgba(15,23,42,.07),inset 0 1px 0 rgba(255,255,255,.72);}
+.player-box{background:#000;border-radius:var(--r);overflow:hidden;aspect-ratio:16/9;position:relative;box-shadow:0 0 0 1px rgba(0,0,0,.22),0 20px 60px rgba(0,0,0,.24);}
 .player-box video{width:100%;height:100%;display:block;}
-.player-err{position:absolute;inset:0;background:rgba(15,23,42,.88);display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#cbd5e1;font-size:14px;}
-.dv-body{padding:20px 0 8px;}
-.dv-title{font-size:22px;font-weight:800;line-height:1.25;margin-bottom:10px;letter-spacing:-.3px;}
-.dv-meta{font-size:12px;color:var(--fg2);line-height:2.1;}
-.dv-desc{font-size:13px;color:var(--dim);line-height:1.85;margin-top:12px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+.player-err{position:absolute;inset:0;background:rgba(10,18,36,.9);display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#94a3b8;font-size:14px;}
+
+/* ── center play overlay (glassmorphism circle) ── */
+.center-play-btn{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(1);width:76px;height:76px;border:none;border-radius:50%;background:rgba(255,255,255,.15);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:2px solid rgba(255,255,255,.42);color:#fff;font-size:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:4;padding-left:4px;box-shadow:0 8px 40px rgba(0,0,0,.38);transition:transform .28s cubic-bezier(.34,1.56,.64,1),background .22s,border-color .22s,box-shadow .22s,opacity .18s;}
+.center-play-btn:hover{transform:translate(-50%,-50%) scale(1.12);background:rgba(99,102,241,.6);border-color:rgba(255,255,255,.7);box-shadow:0 12px 48px rgba(0,0,0,.42),0 0 0 10px rgba(99,102,241,.18);}
+.center-play-btn.hidden{opacity:0;pointer-events:none;transform:translate(-50%,-50%) scale(0.85);}
+
+/* ── player loading (dark cinematic) ── */
+.player-loading-overlay{background:rgba(10,18,36,.72)!important;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:#94a3b8!important;}
+
+/* ── action row ── */
+.player-actions-row{display:flex;align-items:center;justify-content:center;gap:10px;padding:14px 8px 6px;flex-wrap:wrap;}
+.primary-play-btn{display:inline-flex;align-items:center;gap:8px;background:var(--acc-g);border:none;border-radius:10px;padding:10px 28px;color:#fff;font-size:14px;font-weight:700;letter-spacing:.01em;cursor:pointer;box-shadow:0 4px 18px rgba(99,102,241,.38);transition:filter .15s,transform .15s,box-shadow .15s;}
+.primary-play-btn:hover{filter:brightness(1.1);transform:translateY(-1px);box-shadow:0 6px 26px rgba(99,102,241,.52);}
+.primary-play-btn:active{transform:translateY(0);}
+.nav-video-btn{display:inline-flex;align-items:center;gap:6px;background:var(--s1);border:1px solid var(--border);border-radius:10px;padding:9px 18px;color:var(--fg2);font-size:13px;font-weight:600;cursor:pointer;transition:color .18s,border-color .18s,background .18s,transform .15s,box-shadow .15s;}
+.nav-video-btn:hover:not(:disabled){color:var(--fg);border-color:rgba(99,102,241,.4);background:rgba(99,102,241,.04);transform:translateY(-1px);box-shadow:0 4px 12px rgba(99,102,241,.1);}
+.nav-video-btn:disabled{opacity:.3;cursor:not-allowed;}
+
+/* ── keyboard hints ── */
+.player-kb-hint{display:flex;align-items:center;justify-content:center;gap:14px;padding:9px 0 2px;flex-wrap:wrap;opacity:.72;}
+.kb-chip{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--dim);}
+.kb-key{display:inline-block;background:var(--s2);border:1px solid var(--s4);border-bottom-width:2px;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;color:var(--fg2);font-family:'SFMono-Regular',Consolas,monospace;min-width:20px;text-align:center;}
+
+/* ── detail body ── */
+.dv-body{padding:22px 4px 8px;}
+.dv-title{font-size:24px;font-weight:800;line-height:1.2;margin-bottom:12px;letter-spacing:-.5px;color:var(--fg);}
+.dv-meta-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
+.dv-chip{display:inline-flex;align-items:center;gap:3px;background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;color:var(--fg2);font-weight:500;white-space:nowrap;}
+.dv-chip.hi{background:rgba(99,102,241,.07);border-color:rgba(99,102,241,.2);color:var(--acc);font-weight:600;}
+.dv-meta{font-size:12px;color:var(--dim);line-height:1.85;background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:10px 14px;}
+.dv-desc{font-size:13px;color:var(--dim);line-height:1.9;margin-top:14px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;padding:0 2px;}
+
+/* ── episodes ── */
 .ep-section{margin-top:22px;background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:16px 18px;}
 .ep-hd{display:flex;align-items:center;gap:8px;margin-bottom:14px;}
 .ep-label{font-size:11px;font-weight:700;color:var(--fg2);letter-spacing:.07em;text-transform:uppercase;}
@@ -136,13 +168,6 @@ button{cursor:pointer;font-family:inherit;}
 .meta-chip{background:var(--s3);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:12px;color:var(--fg2);cursor:pointer;transition:.18s;font-weight:500;white-space:nowrap;}
 .meta-chip:hover{color:var(--fg);border-color:rgba(124,111,255,.4);background:rgba(124,111,255,.08);}
 .meta-chip-label{font-size:10px;font-weight:700;color:var(--acc2);margin-right:3px;}
-.player-actions-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:18px;}
-.center-play-btn{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:76px;height:76px;border:none;border-radius:999px;background:rgba(255,255,255,.94);color:var(--acc);font-size:30px;font-weight:800;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 14px 34px rgba(15,23,42,.18);z-index:4;transition:opacity .18s,transform .18s,background .18s;}
-.center-play-btn:hover{transform:translate(-50%,-50%) scale(1.06);background:#fff;}
-.center-play-btn.hidden{opacity:0;pointer-events:none;}
-.nav-video-btn{padding:10px 16px;border:1px solid var(--border);border-radius:10px;background:var(--s1);color:var(--fg2);font-size:13px;font-weight:600;cursor:pointer;}
-.nav-video-btn:hover{border-color:rgba(99,102,241,.3);background:var(--s2);color:var(--fg);}
-.nav-video-btn:disabled{opacity:.45;cursor:not-allowed;}
 </style>
 </head>
 <body>
@@ -202,21 +227,31 @@ button{cursor:pointer;font-family:inherit;}
       <button class="back-btn" onclick="goBack()">← 返回</button>
       <span class="dv-crumb" id="dvCrumb"></span>
     </div>
-    <div class="player-box">
-      <video id="player" controls playsinline></video>
-      <button id="centerPlayBtn" class="center-play-btn hidden" onclick="playCurrentVideo()">▶</button>
-      <div id="playerLoading" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:rgba(255,255,255,.72);color:var(--fg2);font-size:13px;z-index:2;">
-        <div style="width:28px;height:28px;border:3px solid rgba(255,255,255,.18);border-top-color:var(--acc2);border-radius:50%;animation:spin 1s linear infinite;"></div>
-        <span id="playerLoadingText">正在加载播放...</span>
+    <div class="player-section">
+      <div class="player-box">
+        <video id="player" controls playsinline></video>
+        <button id="centerPlayBtn" class="center-play-btn hidden" onclick="playCurrentVideo()">▶</button>
+        <div id="playerLoading" class="player-loading-overlay" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;font-size:13px;z-index:2;">
+          <div style="width:28px;height:28px;border:3px solid rgba(255,255,255,.12);border-top-color:#818cf8;border-radius:50%;animation:spin 1s linear infinite;"></div>
+          <span id="playerLoadingText">正在加载播放...</span>
+        </div>
+        <div class="player-err" id="playerErr"><span style="font-size:36px">⚠️</span><span id="playerErrMsg">播放失败</span></div>
       </div>
-      <div class="player-err" id="playerErr"><span style="font-size:36px">⚠️</span><span id="playerErrMsg">播放失败</span></div>
-    </div>
-    <div class="player-actions-row">
-      <button id="prevVideoBtn" class="nav-video-btn" onclick="playAdjacentVideo(-1)">← 上一个</button>
-      <button id="nextVideoBtn" class="nav-video-btn" onclick="playAdjacentVideo(1)">下一个 →</button>
+      <div class="player-actions-row">
+        <button id="prevVideoBtn" class="nav-video-btn" onclick="playAdjacentVideo(-1)">‹ 上一个</button>
+        <button id="primaryPlayBtn" class="primary-play-btn" onclick="playCurrentVideo()" style="display:none">▶ 播放</button>
+        <button id="nextVideoBtn" class="nav-video-btn" onclick="playAdjacentVideo(1)">下一个 ›</button>
+      </div>
+      <div class="player-kb-hint">
+        <span class="kb-chip"><kbd class="kb-key">空格</kbd>&nbsp;播放/暂停</span>
+        <span class="kb-chip"><kbd class="kb-key">←</kbd>&nbsp;<kbd class="kb-key">→</kbd>&nbsp;跳转±5s</span>
+        <span class="kb-chip"><kbd class="kb-key">M</kbd>&nbsp;静音</span>
+        <span class="kb-chip"><kbd class="kb-key">F</kbd>&nbsp;全屏</span>
+      </div>
     </div>
     <div class="dv-body">
       <div class="dv-title" id="dvTitle"></div>
+      <div class="dv-meta-chips" id="dvMetaChips"></div>
       <div class="dv-meta" id="dvMeta"></div>
       <div class="dv-desc" id="dvDesc"></div>
     </div>
@@ -237,13 +272,13 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
 const LOCAL='__local__';
-const EMBY='__emby__';
 let sources=[], curSrc='', curCat=0, page=1, pageCount=1, hasCats=false;
 let isSearch=false, isLocal=false, isEmby=false;
+const EMBY_PREFIX='__emby__:';
 let vodArr=[], epArr=[], hlsInst=null;
-let embyStatus={configured:false,need_auth:false};
+let embyStatus={configured:false,need_auth:false,servers:[]};
 let _playerReadyBound=false;
-let embyLibraries=[], curEmbyLib='', embyPage=1, embyTotal=0;
+let embyLibraries=[], curEmbyLib='', embyPage=1, embyTotal=0, curEmbyServerId='';
 let curEmbyItem=null;
 let curEmbyPerson=null;
 let _embyBrowseRestore=null;
@@ -264,8 +299,8 @@ async function init(){
 function renderSrcBar(){
   const localBtn=`<button class="stab${curSrc===LOCAL?' on':''}" onclick="selectLocal()"><span>📼</span>本地视频库</button>`;
   const srcBtns=sources.map((s,i)=>`<button class="stab${curSrc===s.url?' on':''}" onclick="selectSrc(${i})"><span class="dot"></span>${esc(s.name)}</button>`).join('');
-  const embyBtn=embyStatus.configured?`<button class="stab${curSrc===EMBY?' on':''}" onclick="selectEmby()"><span>🖥</span>Emby</button>`:'';
-  $('srcBar').innerHTML=localBtn+srcBtns+embyBtn;
+  const embyBtns=(embyStatus.servers||[]).filter(s=>s.configured&&s.enabled!==false).map(s=>`<button class="stab${curSrc===EMBY_PREFIX+s.id?' on':''}" onclick="selectEmby('${s.id}')"><span>🖥</span>${esc(s.name||'Emby')}</button>`).join('');
+  $('srcBar').innerHTML=localBtn+srcBtns+embyBtns;
 }
 
 // ── local videos ───────────────────────────────────────────────
@@ -389,40 +424,49 @@ function cmsCard(v,i,showSrc){
 function setGrid(html){$('grid').innerHTML=html;$('moreWrap').style.display='none';$('secHd').innerHTML='';}
 
 // ── Emby ───────────────────────────────────────────────────────
-function selectEmby(){
-  if(embyStatus.need_auth&&sessionStorage.getItem('sv_emby_authed')!=='1'){
-    showEmbyAuth();return;
+function _embySessionKey(serverId){return `sv_emby_authed_${serverId}`;}
+function _currentEmbyServer(){return (embyStatus.servers||[]).find(s=>s.id===curEmbyServerId)||null;}
+
+async function selectEmby(serverId){
+  const server=(embyStatus.servers||[]).find(s=>s.id===serverId);
+  if(!server) return;
+  if(server.need_auth&&sessionStorage.getItem(_embySessionKey(serverId))!=='1'){
+    showEmbyAuth(serverId);return;
   }
-  _openEmby();
+  _openEmby(serverId);
 }
-function showEmbyAuth(){
+function showEmbyAuth(serverId){
+  curEmbyServerId=serverId;
   const overlay=$('embyAuthOverlay');
   overlay.style.display='flex';
   $('embyPwdInput').value='';$('embyPwdErr').textContent='';
+  $('embyPwdInput').dataset.serverId=serverId;
   setTimeout(()=>$('embyPwdInput').focus(),50);
 }
 async function doEmbyAuth(){
   const pw=$('embyPwdInput').value;
+  const serverId=$('embyPwdInput').dataset.serverId||curEmbyServerId;
   try{
-    const r=await fetch('/api/emby/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
+    const r=await fetch('/api/emby/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({server_id:serverId,password:pw})});
     if(!r.ok){$('embyPwdErr').textContent='密码错误，请重试';$('embyPwdInput').value='';$('embyPwdInput').focus();return;}
-    sessionStorage.setItem('sv_emby_authed','1');
+    sessionStorage.setItem(_embySessionKey(serverId),'1');
     $('embyAuthOverlay').style.display='none';
-    _openEmby();
+    _openEmby(serverId);
   }catch(e){$('embyPwdErr').textContent='验证失败';}
 }
 $('embyPwdBtn').addEventListener('click',doEmbyAuth);
 $('embyPwdInput').addEventListener('keydown',e=>{if(e.key==='Enter')doEmbyAuth();});
 
-async function _openEmby(){
-  curSrc=EMBY;isEmby=true;isLocal=false;isSearch=false;curEmbyPerson=null; _setCurrentPlayable(null,-1);
+async function _openEmby(serverId){
+  curEmbyServerId=serverId;
+  curSrc=EMBY_PREFIX+serverId;isEmby=true;isLocal=false;isSearch=false;curEmbyPerson=null; _setCurrentPlayable(null,-1);
   $('q').value='';
   renderSrcBar();
   showBrowse();
   $('catOuter').style.display='none';
   setGrid(skelHtml(8));$('secHd').innerHTML='';
   try{
-    const r=await fetch('/api/emby/libraries');
+    const r=await fetch(`/api/emby/libraries?server_id=${encodeURIComponent(serverId)}`);
     embyLibraries=await r.json();
     curEmbyLib='';embyPage=1;
     if(!embyLibraries.length){setGrid(emptyHtml('📭','Emby 媒体库为空',''));return;}
@@ -430,9 +474,8 @@ async function _openEmby(){
     $('catBar').innerHTML=`<button class="ctab on" data-cat="" onclick="selectEmbyLib('')">全部</button>`+
       embyLibraries.map(l=>`<button class="ctab" data-cat="${l.id}" onclick="selectEmbyLib('${l.id}')">${esc(l.name)}</button>`).join('');
     await loadEmbyItems('',1);
-  }catch(e){setGrid(emptyHtml('⚠️','加载失败','请检查 Emby 连接或用户配置'));}
+  }catch(e){setGrid(emptyHtml('⚠️','加载失败','请检查 Emby 连接、库过滤或用户配置'));}
 }
-
 
 async function selectEmbyLib(libId){
   curEmbyLib=libId;embyPage=1;vodArr=[];curEmbyPerson=null;
@@ -443,15 +486,15 @@ async function selectEmbyLib(libId){
 
 async function loadEmbyItems(libId,pg){
   try{
-    const p=new URLSearchParams({pg,limit:40});
+    const p=new URLSearchParams({pg,limit:40,server_id:curEmbyServerId});
     if(libId) p.set('parent_id',libId);
     const r=await fetch('/api/emby/items?'+p);
     const d=await r.json();
     if(!r.ok) throw new Error(d.detail||d.error||'Emby 分类加载失败');
     embyPage=pg;
     embyTotal=d.total||0;
-    vodArr=(d.items||[]).map(i=>({...i,__emby:true}));
-    const libName=libId?embyLibraries.find(l=>l.id===libId)?.name||'Emby':'Emby 全部';
+    vodArr=(d.items||[]).map(i=>({...i,__emby:true,__embyServerId:curEmbyServerId}));
+    const libName=libId?embyLibraries.find(l=>l.id===libId)?.name||'Emby':(_currentEmbyServer()?.name||'Emby');
     $('secHd').innerHTML=secHdHtml(libName,`${embyTotal} 个 · 第 ${embyPage} 页`);
     renderEmbyGrid(vodArr,true);
     renderPager(embyPage, Math.max(1, Math.ceil(embyTotal/40)), 'gotoEmbyPage');
@@ -464,7 +507,6 @@ async function gotoEmbyPage(pg){
   if(pg<1||pg>totalPages)return;
   await loadEmbyItems(curEmbyLib, pg);
 }
-
 
 function renderEmbyGrid(items,replace){
   const off=replace?0:vodArr.length-items.length;
@@ -479,20 +521,14 @@ function embyCard(v,i){
   const bg=`background:linear-gradient(145deg,hsl(${hue},30%,80%),hsl(${(hue+55)%360},22%,70%))`;
   const img=v.thumb?`<img src="${esc(v.thumb)}" loading="lazy" decoding="async" fetchpriority="low" onerror="this.remove()">`:'';
   const tag=v.type==='Series'?`<div class="vc-tag">剧集</div>`:v.year?`<div class="vc-tag">${esc(String(v.year))}</div>`:'';
-  return `<div class="vc" onclick="openDetail(${i})">
-    <div class="vc-thumb" style="${bg}">
-      <div class="vc-thumb-icon">🖥</div>
-      ${img}${tag}
-      <div class="vc-overlay"><div class="play-circle">▶</div></div>
-    </div>
-    <div class="vc-body">
-      <div class="vc-name">${esc(v.name)}</div>
-      <div class="vc-sub">${esc(String(v.year||''))||'&nbsp;'}</div>
-    </div>
-  </div>`;
+  const serverBadge=_currentEmbyServer()?.name?`<div class="vc-badge">${esc(_currentEmbyServer().name)}</div>`:'';
+  return `<div class="vc" onclick="openDetail(${i})"><div class="vc-thumb" style="${bg}"><div class="vc-thumb-icon">🖥</div>${img}${tag}<div class="vc-overlay"><div class="play-circle">▶</div></div></div><div class="vc-body"><div class="vc-name">${esc(v.name)}</div><div class="vc-sub">${esc(String(v.year||''))||'&nbsp;'}</div>${serverBadge}</div></div>`;
 }
 
-function _clearPeopleChips(){const el=document.getElementById('dvPeopleChips');if(el)el.remove();}
+function _clearPeopleChips(){
+  const el=document.getElementById('dvPeopleChips');if(el)el.remove();
+  const mc=$('dvMetaChips');if(mc)mc.innerHTML='';
+}
 
 function updateCenterPlayOverlay(show){
   const cp=$('centerPlayBtn');
@@ -502,14 +538,15 @@ function _setCurrentPlayable(payload,index=-1){
   _currentPlayable=payload;
   _currentPlayableIndex=index;
   const hasPlayable=!!payload;
-  const prev=$('prevVideoBtn'), next=$('nextVideoBtn');
+  const pp=$('primaryPlayBtn'), prev=$('prevVideoBtn'), next=$('nextVideoBtn');
+  if(pp) pp.style.display=hasPlayable?'inline-flex':'none';
   updateCenterPlayOverlay(hasPlayable);
   if(prev) prev.disabled=!(index>0);
   if(next) next.disabled=!(index>=0 && index<vodArr.length-1);
 }
 function playCurrentVideo(){
   if(!_currentPlayable) return;
-  if(_currentPlayable.kind==='emby-movie') embyDirectPlay(_currentPlayable.id);
+  if(_currentPlayable.kind==='emby-movie') embyDirectPlay(_currentPlayable.id, undefined, _currentPlayable.serverId);
   else if(_currentPlayable.kind==='local') startPlay($('player'), _currentPlayable.url);
   else if(_currentPlayable.kind==='cms-episode') playEp(_currentPlayable.index);
 }
@@ -521,9 +558,10 @@ async function playAdjacentVideo(step){
 
 async function openEmbyDetail(v){
   curEmbyItem=v;
+  const serverId=v.__embyServerId||curEmbyServerId;
   _clearPeopleChips();
   showDetail();
-  $('dvCrumb').textContent='Emby';
+  $('dvCrumb').textContent=_currentEmbyServer()?.name||'Emby';
   $('dvTitle').textContent=v.name;
   $('dvMeta').textContent='加载详情中...';
   $('dvDesc').textContent=v.overview||'';
@@ -532,25 +570,17 @@ async function openEmbyDetail(v){
   stopPlayer();
   _embyCurPeople=[];
   try{
-    const dr=await fetch(`/api/emby/detail/${v.id}`);
+    const dr=await fetch(`/api/emby/detail/${v.id}?server_id=${encodeURIComponent(serverId)}`);
     if(dr.ok){
       const detail=await dr.json();
       const directors=(detail.people||[]).filter(p=>p.type==='Director').slice(0,2);
       const actors=(detail.people||[]).filter(p=>p.type==='Actor'||p.type==='GuestStar').slice(0,12);
-      $('dvMeta').innerHTML=[
-        detail.year||'',
-        detail.type==='Series'?'剧集':'电影',
-        detail.rating?`分级：${esc(detail.rating)}`:'',
-        directors.length?`导演：${esc(directors.map(p=>p.name).join('、'))}`:'',
-        detail.genres&&detail.genres.length?`类型：${esc(detail.genres.slice(0,3).join(' / '))}`:''
-      ].filter(Boolean).join('  ·  ');
+      $('dvMeta').innerHTML=[detail.year||'',detail.type==='Series'?'剧集':'电影',detail.rating?`分级：${esc(detail.rating)}`:'',directors.length?`导演：${esc(directors.map(p=>p.name).join('、'))}`:'',detail.genres&&detail.genres.length?`类型：${esc(detail.genres.slice(0,3).join(' / '))}`:''].filter(Boolean).join('  ·  ');
+      renderDetailChips([detail.year&&{label:String(detail.year),hi:false},{label:detail.type==='Series'?'剧集':'电影',hi:true},detail.rating&&{label:detail.rating,hi:false},...(detail.genres||[]).slice(0,3).map(g=>({label:g,hi:false}))]);
       $('dvDesc').textContent=detail.overview||v.overview||'';
-      _embyCurPeople=[...directors,...actors];
+      _embyCurPeople=[...directors,...actors].map(x=>({...x,__serverId:serverId}));
       if(_embyCurPeople.length){
-        const chips=_embyCurPeople.map((p,i)=>{
-          const label=p.type==='Director'?`<span class="meta-chip-label">导</span>`:'';
-          return `<button class="meta-chip" onclick="_browseByPersonIdx(${i})">${label}${esc(p.name)}</button>`;
-        }).join('');
+        const chips=_embyCurPeople.map((p,i)=>{const label=p.type==='Director'?`<span class="meta-chip-label">导</span>`:'';return `<button class="meta-chip" onclick="_browseByPersonIdx(${i})">${label}${esc(p.name)}</button>`;}).join('');
         $('dvDesc').insertAdjacentHTML('afterend',`<div class="meta-chips" id="dvPeopleChips">${chips}</div>`);
       }
     }
@@ -561,29 +591,26 @@ async function openEmbyDetail(v){
     $('epTotal').textContent='加载中...';
     $('epGrid').innerHTML='';
     try{
-      const r=await fetch(`/api/emby/episodes/${v.id}`);
+      const r=await fetch(`/api/emby/episodes/${v.id}?server_id=${encodeURIComponent(serverId)}`);
       const eps=await r.json();
       $('epTotal').textContent=eps.length?eps.length+'集':'';
       if(!eps.length){$('epGrid').innerHTML='<span style="color:var(--dim);font-size:12px">暂无剧集</span>';return;}
-      $('epGrid').innerHTML=eps.map((ep,i)=>`
-        <button class="ep" id="embyEp${i}" onclick="embyDirectPlay('${ep.id}',${i})">
-          S${ep.season}E${ep.episode} ${esc(ep.name)}
-        </button>`).join('');
+      $('epGrid').innerHTML=eps.map((ep,i)=>`<button class="ep" id="embyEp${i}" onclick="embyDirectPlay('${ep.id}',${i},'${serverId}')">S${ep.season}E${ep.episode} ${esc(ep.name)}</button>`).join('');
     }catch(e){$('epGrid').innerHTML='<span style="color:#f87171;font-size:12px">加载失败</span>';}
   } else {
     $('embyActions').style.display='block';
-    _setCurrentPlayable({kind:'emby-movie',id:v.id}, vodArr.findIndex(x=>x && x.id===v.id));
-    $('embyDirectBtn').onclick=()=>embyDirectPlay(v.id);
+    _setCurrentPlayable({kind:'emby-movie',id:v.id,serverId}, vodArr.findIndex(x=>x && x.id===v.id));
+    $('embyDirectBtn').onclick=()=>embyDirectPlay(v.id, undefined, serverId);
   }
 }
 
-async function embyDirectPlay(itemId,epIdx){
+async function embyDirectPlay(itemId,epIdx,serverId=curEmbyServerId){
   if(epIdx!==undefined){
     document.querySelectorAll('#epGrid .ep').forEach((b,i)=>b.classList.toggle('on',i===epIdx));
     document.getElementById('embyEp'+epIdx)?.scrollIntoView({block:'nearest',inline:'center'});
   }
   try{
-    const r=await fetch(`/api/emby/direct/${itemId}`);
+    const r=await fetch(`/api/emby/${encodeURIComponent(serverId)}/direct/${itemId}`);
     if(!r.ok){throw new Error('HTTP '+r.status);}
     const d=await r.json();
     startPlay($('player'),d.url);
@@ -594,20 +621,13 @@ async function embyDirectPlay(itemId,epIdx){
 function _browseByPersonIdx(idx){
   const p=_embyCurPeople[idx];
   if(!p||!p.id) return;
-  openEmbyPerson(p.id, p.name);
+  openEmbyPerson(p.id, p.name, p.__serverId||curEmbyServerId);
 }
 
-async function openEmbyPerson(personId, personName){
-  _embyBrowseRestore={
-    curEmbyLib,
-    embyPage,
-    embyTotal,
-    vodArr:[...vodArr],
-    secHd:$('secHd').innerHTML,
-    moreWrap:$('moreWrap').style.display,
-    catOuter:$('catOuter').style.display,
-  };
-  curSrc=EMBY;isEmby=true;isLocal=false;isSearch=false;
+async function openEmbyPerson(personId, personName, serverId=curEmbyServerId){
+  _embyBrowseRestore={curEmbyLib,embyPage,embyTotal,vodArr:[...vodArr],secHd:$('secHd').innerHTML,moreWrap:$('moreWrap').style.display,catOuter:$('catOuter').style.display,serverId:curEmbyServerId};
+  curSrc=EMBY_PREFIX+serverId;isEmby=true;isLocal=false;isSearch=false;
+  curEmbyServerId=serverId;
   curEmbyPerson={id:personId,name:personName};
   embyPage=1; vodArr=[];
   stopPlayer();
@@ -626,12 +646,7 @@ function _renderEmbyPersonHeader(){
   $('secHd').innerHTML=`<div class="sec-hd">${backBtn}<span class="sec-title">${esc(label)}</span>${embyTotal?`<span class="sec-count">${esc(String(embyTotal))} 个</span>`:''}</div>`;
 }
 
-function returnToEmbyDetail(){
-  if(curEmbyItem){
-    showDetail();
-    openEmbyDetail(curEmbyItem);
-  }
-}
+function returnToEmbyDetail(){if(curEmbyItem){showDetail();openEmbyDetail(curEmbyItem);}}
 
 function _restoreEmbyBrowseAfterPerson(){
   if(!_embyBrowseRestore) return false;
@@ -639,6 +654,7 @@ function _restoreEmbyBrowseAfterPerson(){
   curEmbyLib=_embyBrowseRestore.curEmbyLib||'';
   embyPage=_embyBrowseRestore.embyPage||1;
   embyTotal=_embyBrowseRestore.embyTotal||0;
+  curEmbyServerId=_embyBrowseRestore.serverId||curEmbyServerId;
   vodArr=Array.isArray(_embyBrowseRestore.vodArr)?[..._embyBrowseRestore.vodArr]:[];
   $('secHd').innerHTML=_embyBrowseRestore.secHd||'';
   $('grid').innerHTML=vodArr.length ? vodArr.map((v,i)=>embyCard(v,i)).join('') : emptyHtml('📭','暂无内容','');
@@ -650,12 +666,12 @@ function _restoreEmbyBrowseAfterPerson(){
 
 async function loadEmbyPersonItems(personId, pg){
   try{
-    const r=await fetch(`/api/emby/person/${encodeURIComponent(personId)}?pg=${pg}&limit=40`);
+    const r=await fetch(`/api/emby/person/${encodeURIComponent(personId)}?pg=${pg}&limit=40&server_id=${encodeURIComponent(curEmbyServerId)}`);
     const d=await r.json();
     if(!r.ok) throw new Error(d.detail||'演员作品加载失败');
     embyPage=pg;
     embyTotal=d.total||0;
-    vodArr=(d.items||[]).map(i=>({...i,__emby:true}));
+    vodArr=(d.items||[]).map(i=>({...i,__emby:true,__embyServerId:curEmbyServerId}));
     _renderEmbyPersonHeader();
     renderEmbyGrid(vodArr, true);
     renderPager(embyPage, Math.max(1, Math.ceil(embyTotal/40)), 'gotoEmbyPersonPage');
@@ -705,6 +721,7 @@ async function openDetail(idx){
     $('dvCrumb').textContent='本地视频库';
     $('dvTitle').textContent=v.name;
     $('dvMeta').textContent=`${v.size_mb} MB · ${new Date(v.created_at).toLocaleString('zh-CN')}`;
+    renderDetailChips([{label:'本地视频',hi:true},{label:v.size_mb+' MB',hi:false}]);
     $('dvDesc').textContent='';
     $('epSection').style.display='none';
     stopPlayer();
@@ -733,6 +750,11 @@ async function openDetail(idx){
       vod.vod_director?'导演：'+vod.vod_director:'',
       vod.vod_actor?'主演：'+vod.vod_actor.split(',').slice(0,4).join('、'):'',
     ].filter(Boolean).join('  ·  ');
+    renderDetailChips([
+      vod.vod_year&&{label:String(vod.vod_year),hi:false},
+      vod.type_name&&{label:vod.type_name,hi:true},
+      vod.vod_area&&{label:vod.vod_area,hi:false},
+    ]);
     if(vod.vod_content) $('dvDesc').textContent=vod.vod_content.replace(/<[^>]+>/g,'').trim();
     epArr=parseEps(vod.vod_play_from||'',vod.vod_play_url||'');
     $('epTotal').textContent=epArr.length?epArr.length+'集':'';
@@ -868,6 +890,22 @@ function emptyHtml(icon,h,p){
 function secHdHtml(title,count){
   return `<div class="sec-hd"><span class="sec-title">${esc(title)}</span>${count?`<span class="sec-count">${esc(count)}</span>`:''}</div>`;
 }
+
+function renderDetailChips(chips){
+  const el=$('dvMetaChips');if(!el)return;
+  el.innerHTML=chips.filter(Boolean).map(c=>`<span class="dv-chip${c.hi?' hi':''}">${esc(c.label)}</span>`).join('');
+}
+
+document.addEventListener('keydown',e=>{
+  if($('detailView').style.display==='none')return;
+  if(['INPUT','TEXTAREA'].includes(e.target.tagName))return;
+  const v=$('player');if(!v)return;
+  if(e.key===' '||e.key==='k'){e.preventDefault();v.paused?v.play().catch(()=>{}):v.pause();}
+  else if(e.key==='ArrowLeft'){e.preventDefault();v.currentTime=Math.max(0,(v.currentTime||0)-5);}
+  else if(e.key==='ArrowRight'){e.preventDefault();if(v.duration)v.currentTime=Math.min(v.duration,(v.currentTime||0)+5);}
+  else if(e.key==='m'||e.key==='M'){v.muted=!v.muted;}
+  else if(e.key==='f'||e.key==='F'){v.requestFullscreen?.();}
+});
 
 init();
 </script>

@@ -57,8 +57,107 @@ tasks: dict = {}          # 下载任务
 api_sources: list = []    # 采集站接口
 subscriptions: dict = {}  # 订阅列表 {sub_id: Subscription}
 settings: dict = {"check_interval": 3600, "password_hash": "", "tvbox_local_enabled": True, "tvbox_emby_enabled": True}  # 全局设置，password_hash 为空时不需要认证
-emby_config: dict = {"url": "", "api_key": "", "user_id": "", "password_hash": ""}
+emby_config: dict = {"url": "", "api_key": "", "user_id": "", "password_hash": ""}  # legacy fallback
+emby_servers: list = []
 _download_semaphore: Optional[asyncio.Semaphore] = None
+
+
+def _normalize_emby_server(server: dict, idx: int = 0) -> dict:
+    sid = str(server.get("id") or f"emby_{idx + 1}").strip()
+    sid = re.sub(r"[^a-zA-Z0-9_-]", "_", sid) or f"emby_{idx + 1}"
+    return {
+        "id": sid,
+        "name": (server.get("name") or f"Emby {idx + 1}").strip() or f"Emby {idx + 1}",
+        "url": (server.get("url") or "").rstrip("/"),
+        "api_key": server.get("api_key") or "",
+        "user_id": server.get("user_id") or "",
+        "password_hash": server.get("password_hash") or "",
+        "enabled": server.get("enabled", True) is not False,
+        "tvbox_enabled": server.get("tvbox_enabled", True) is not False,
+        "allowed_library_ids": [str(x) for x in (server.get("allowed_library_ids") or []) if str(x).strip()],
+        "hidden_library_ids": [str(x) for x in (server.get("hidden_library_ids") or []) if str(x).strip()],
+    }
+
+
+def _migrate_legacy_emby_servers(raw_servers: list) -> list:
+    servers = [_normalize_emby_server(s, i) for i, s in enumerate(raw_servers or []) if isinstance(s, dict)]
+    if servers:
+        return servers
+    if emby_config.get("url") or emby_config.get("api_key") or emby_config.get("user_id") or emby_config.get("password_hash"):
+        return [_normalize_emby_server({
+            "id": "default",
+            "name": "默认 Emby",
+            "url": emby_config.get("url", ""),
+            "api_key": emby_config.get("api_key", ""),
+            "user_id": emby_config.get("user_id", ""),
+            "password_hash": emby_config.get("password_hash", ""),
+            "enabled": True,
+            "tvbox_enabled": settings.get("tvbox_emby_enabled", True),
+            "allowed_library_ids": [],
+            "hidden_library_ids": [],
+        }, 0)]
+    return []
+
+
+def _ensure_emby_servers_loaded():
+    global emby_servers
+    if not emby_servers:
+        emby_servers = _migrate_legacy_emby_servers([])
+
+
+def _get_emby_server(server_id: str | None = None, require_enabled: bool = True) -> dict:
+    _ensure_emby_servers_loaded()
+    if not emby_servers:
+        raise HTTPException(400, "Emby 未配置")
+    if not server_id:
+        for s in emby_servers:
+            if not require_enabled or s.get("enabled", True):
+                return s
+        raise HTTPException(400, "没有可用的 Emby 源")
+    for s in emby_servers:
+        if s.get("id") == server_id:
+            if require_enabled and not s.get("enabled", True):
+                raise HTTPException(403, "Emby 源已禁用")
+            return s
+    raise HTTPException(404, "Emby 源不存在")
+
+
+def _emby_public_server_summary(server: dict) -> dict:
+    return {
+        "id": server["id"],
+        "name": server.get("name", server["id"]),
+        "configured": bool(server.get("url") and server.get("api_key") and server.get("user_id")),
+        "need_auth": bool(server.get("password_hash", "")),
+        "tvbox_enabled": server.get("tvbox_enabled", True),
+        "enabled": server.get("enabled", True),
+        "has_filters": bool(server.get("allowed_library_ids") or server.get("hidden_library_ids")),
+    }
+
+
+async def _fetch_emby_views(server: dict) -> list:
+    url = server.get("url", "")
+    api_key = server.get("api_key", "")
+    user_id = server.get("user_id", "")
+    if not url or not api_key or not user_id:
+        raise HTTPException(400, "Emby 未完整配置")
+    async with _make_http_client() as client:
+        r = await client.get(f"{url}/Users/{user_id}/Views", headers={"X-Emby-Token": api_key}, timeout=10)
+        r.raise_for_status()
+        items = r.json().get("Items", [])
+    libs = []
+    allowed = set(server.get("allowed_library_ids") or [])
+    hidden = set(server.get("hidden_library_ids") or [])
+    for i in items:
+        ctype = (i.get("CollectionType") or "").lower()
+        if ctype not in {"movies", "tvshows", "mixed"} and i.get("Type") != "CollectionFolder":
+            continue
+        iid = str(i.get("Id") or "")
+        if allowed and iid not in allowed:
+            continue
+        if iid in hidden:
+            continue
+        libs.append(i)
+    return libs
 
 
 # ─── 持久化 ────────────────────────────────────────────
@@ -68,6 +167,7 @@ def save_data():
         "api_sources": api_sources,
         "settings": settings,
         "emby_config": emby_config,
+        "emby_servers": emby_servers,
         "subscriptions": {
             sid: {
                 "sub_id": s.sub_id,
@@ -93,7 +193,7 @@ def save_data():
 
 
 def load_data():
-    global api_sources
+    global api_sources, emby_servers
     if not DATA_FILE.exists():
         return
     try:
@@ -107,6 +207,7 @@ def load_data():
         for k in emby_config:
             if k in saved_ec:
                 emby_config[k] = saved_ec[k]
+        emby_servers = _migrate_legacy_emby_servers(data.get("emby_servers", []))
         for sid, d in data.get("subscriptions", {}).items():
             s = Subscription.__new__(Subscription)
             s.sub_id = d["sub_id"]
@@ -1200,18 +1301,29 @@ async def tvbox_source_proxy(source_index: int, request: Request):
         raise HTTPException(502, str(e))
 
 
+def _tvbox_emby_site(server: dict, base_url: str) -> dict:
+    return {
+        "key": f"emby_{server['id']}",
+        "name": f"🎬 {server.get('name', 'Emby')}",
+        "type": 1,
+        "api": f"{base_url}/tvbox/emby/{server['id']}",
+        "searchable": 0,
+        "quickSearch": 0,
+        "filterable": 0,
+    }
+
+
 @app.get("/tvbox/source")
 async def tvbox_source(request: Request):
     """
     TVBox 多仓配置：
-    - 本地视频库：type=0 内置JSON，直接显示已下载视频
+    - 本地视频库：type=1 内置JSON直接渲染
+    - Emby：每个已启用 TVBox 暴露的 Emby 单独一个站点
     - 采集站源：type=1 苹果CMS，直接透传网页里配置的每个接口
-    把 http://IP:8080/tvbox/source 填入 TVBox 配置地址即可。
     """
     base_url = str(request.base_url).rstrip("/")
     sites = []
 
-    # 1. 本地视频库（type=0，内置JSON直接渲染）
     if settings.get("tvbox_local_enabled", True):
         sites.append({
             "key": "streamvault_local",
@@ -1223,19 +1335,16 @@ async def tvbox_source(request: Request):
             "filterable": 0,
         })
 
-    # 2. Emby 媒体库（配置后才显示，且 TVBox 曝光已开启）
-    if emby_config.get("url") and emby_config.get("api_key") and settings.get("tvbox_emby_enabled", True):
-        sites.append({
-            "key": "emby_library",
-            "name": "🎬 Emby 媒体库",
-            "type": 1,
-            "api": f"{base_url}/tvbox/emby",
-            "searchable": 0,
-            "quickSearch": 0,
-            "filterable": 0,
-        })
+    if settings.get("tvbox_emby_enabled", True):
+        for server in emby_servers:
+            if not server.get("enabled", True):
+                continue
+            if not server.get("tvbox_enabled", True):
+                continue
+            if not (server.get("url") and server.get("api_key") and server.get("user_id")):
+                continue
+            sites.append(_tvbox_emby_site(server, base_url))
 
-    # 3. 网页里配置的每个采集站（type=1，苹果CMS JSON接口）
     for idx, src in enumerate(api_sources):
         if not src.get("enabled", True):
             continue
@@ -1253,128 +1362,37 @@ async def tvbox_source(request: Request):
         })
 
     config = {
-        "spider": "",
-        "wallpaper": "",
         "sites": sites,
-        "doh": [],
         "lives": [],
         "parses": [],
-        "flags": ["youku", "qq", "iqiyi", "fun", "le", "sohu", "pptv"],
-        "rules": [],
-        "ads": [],
+        "spider": "",
+        "wallpaper": "",
+        "logo": "",
     }
-    return JSONResponse(content=config)
+    return JSONResponse(config)
 
 
-@app.get("/tvbox")
-async def tvbox_config(request: Request):
-    """
-    标准苹果CMS接口，TVBox 用 type=1 调用。
-    - ac=list  → 返回分类列表（首页展示用）
-    - ac=detail → 返回影片详情+播放地址
-    - 不传 ac  → 同 ac=list
-    """
+def _emby_stream_url(server: dict, item_id: str) -> str:
+    return f"{server['url']}/Videos/{item_id}/stream?api_key={server['api_key']}&static=true"
+
+
+@app.get("/tvbox/emby/{server_id}")
+async def tvbox_emby(server_id: str, request: Request):
+    server = _get_emby_server(server_id)
+    url = server.get("url", "")
+    api_key = server.get("api_key", "")
+    user_id = server.get("user_id", "")
     base_url = str(request.base_url).rstrip("/")
-    ac = request.query_params.get("ac", "list")
-    video_files = _get_video_files()
-
-    # 固定只有一个分类"本地视频"
-    class_list = [{"type_id": 1, "type_name": "本地视频"}]
-
-    if ac == "list":
-        # 首页请求：返回分类 + 最近视频列表（不含播放地址）
-        vod_list = [{
-            "vod_id": i + 1,
-            "vod_name": f.stem,
-            "type_id": 1,
-            "type_name": "本地视频",
-            "vod_pic": "",
-            "vod_remarks": f"{round(f.stat().st_size/1024/1024):.0f}MB",
-            "vod_time": datetime.fromtimestamp(f.stat().st_ctime).strftime("%Y-%m-%d %H:%M:%S"),
-        } for i, f in enumerate(video_files)]
-        return JSONResponse({
-            "code": 1, "msg": "数据列表",
-            "page": 1, "pagecount": 1,
-            "limit": len(vod_list), "total": len(vod_list),
-            "list": vod_list,
-            "class": class_list,
-        })
-
-    elif ac == "detail":
-        # 详情请求：返回带播放地址的完整数据
-        # 支持按 ids 筛选（TVBox 点击某个影片时传 ids=vod_id）
-        ids_param = request.query_params.get("ids", "")
-        id_set = set(ids_param.split(",")) if ids_param else set()
-
-        vod_list = []
-        for i, f in enumerate(video_files):
-            vod_id = i + 1
-            if id_set and str(vod_id) not in id_set:
-                continue
-            stream_url = f"{base_url}/api/stream/{quote(f.name)}"
-            vod_list.append({
-                "vod_id": vod_id,
-                "vod_name": f.stem,
-                "type_id": 1,
-                "type_name": "本地视频",
-                "vod_pic": "",
-                "vod_remarks": f"{round(f.stat().st_size/1024/1024):.0f}MB",
-                "vod_time": datetime.fromtimestamp(f.stat().st_ctime).strftime("%Y-%m-%d %H:%M:%S"),
-                "vod_play_from": "local",
-                "vod_play_url": f"{f.stem}${stream_url}",
-            })
-        return JSONResponse({
-            "code": 1, "msg": "数据列表",
-            "page": 1, "pagecount": 1,
-            "limit": len(vod_list), "total": len(vod_list),
-            "list": vod_list,
-            "class": class_list,
-        })
-
-    # 其他 ac 值返回空
-    return JSONResponse({"code": 1, "msg": "ok", "list": [], "class": class_list})
-
-
-def _emby_stream_url(item_id: str) -> str:
-    """Return a direct Emby stream URL suitable for TVBox playback."""
-    return (f"{emby_config['url']}/Videos/{item_id}/stream"
-            f"?api_key={emby_config['api_key']}&static=true")
-
-
-@app.get("/tvbox/emby")
-async def tvbox_emby(request: Request):
-    """
-    TVBox Apple CMS endpoint for Emby content.
-    ac=list   → Emby libraries as classes; movies/series as vod list (filter by t=<class idx>)
-    ac=detail → item details with direct playback URLs; series exposes all episodes
-    """
-    url = emby_config.get("url", "")
-    api_key = emby_config.get("api_key", "")
-    user_id = emby_config.get("user_id", "")
-    base_url = str(request.base_url).rstrip("/")
-
     if not url or not api_key or not user_id:
         return JSONResponse({"code": -1, "msg": "Emby 未完整配置", "list": [], "class": []})
-
     ac = request.query_params.get("ac", "list")
-
     async with _make_http_client() as client:
-        # Always fetch libraries so we can build the class list
         try:
-            lib_r = await client.get(
-                f"{url}/Users/{user_id}/Views",
-                headers={"X-Emby-Token": api_key}, timeout=10,
-            )
-            lib_r.raise_for_status()
-            libraries = [{"id": i["Id"], "name": i["Name"]}
-                         for i in lib_r.json().get("Items", [])]
+            raw_libraries = await _fetch_emby_views(server)
+            libraries = [{"id": i["Id"], "name": i["Name"]} for i in raw_libraries]
         except Exception:
             libraries = []
-
-        # type_id is 1-based index into libraries list
-        class_list = [{"type_id": idx + 1, "type_name": lib["name"]}
-                      for idx, lib in enumerate(libraries)]
-
+        class_list = [{"type_id": idx + 1, "type_name": lib["name"]} for idx, lib in enumerate(libraries)]
         if ac == "list":
             t_param = request.query_params.get("t", "0")
             pg = max(1, int(request.query_params.get("pg", "1")))
@@ -1383,9 +1401,7 @@ async def tvbox_emby(request: Request):
                 t_idx = int(t_param)
             except ValueError:
                 t_idx = 0
-            parent_id = (libraries[t_idx - 1]["id"]
-                         if 0 < t_idx <= len(libraries) else "")
-
+            parent_id = (libraries[t_idx - 1]["id"] if 0 < t_idx <= len(libraries) else "")
             params = {
                 "IncludeItemTypes": "Movie,Series",
                 "Recursive": "true",
@@ -1397,16 +1413,12 @@ async def tvbox_emby(request: Request):
             }
             if parent_id:
                 params["ParentId"] = parent_id
-
             try:
-                r = await client.get(f"{url}/Users/{user_id}/Items",
-                                     headers={"X-Emby-Token": api_key},
-                                     params=params, timeout=15)
+                r = await client.get(f"{url}/Users/{user_id}/Items", headers={"X-Emby-Token": api_key}, params=params, timeout=15)
                 r.raise_for_status()
                 data = r.json()
             except Exception as e:
                 return JSONResponse({"code": -1, "msg": str(e), "list": [], "class": class_list})
-
             vod_list = []
             for item in data.get("Items", []):
                 has_img = bool((item.get("ImageTags") or {}).get("Primary"))
@@ -1415,56 +1427,35 @@ async def tvbox_emby(request: Request):
                     "vod_name": item["Name"],
                     "type_id": t_idx or 1,
                     "type_name": item.get("Type", ""),
-                    "vod_pic": f"{base_url}/api/emby/image/{item['Id']}?w=200" if has_img else "",
+                    "vod_pic": f"{base_url}/api/emby/{server_id}/image/{item['Id']}?w=200" if has_img else "",
                     "vod_remarks": str(item.get("ProductionYear", "")),
                     "vod_time": "",
                 })
-
             total = data.get("TotalRecordCount", len(vod_list))
             pagecount = max(1, (total + limit - 1) // limit)
-            return JSONResponse({
-                "code": 1, "msg": "数据列表",
-                "page": pg, "pagecount": pagecount,
-                "limit": limit, "total": total,
-                "list": vod_list,
-                "class": class_list,
-            })
-
+            return JSONResponse({"code": 1, "msg": "数据列表", "page": pg, "pagecount": pagecount, "limit": limit, "total": total, "list": vod_list, "class": class_list})
         elif ac == "detail":
             ids_param = request.query_params.get("ids", "")
             vod_list = []
-
             for item_id in ids_param.split(","):
                 item_id = item_id.strip()
                 if not item_id:
                     continue
                 try:
-                    r = await client.get(
-                        f"{url}/Users/{user_id}/Items/{item_id}",
-                        headers={"X-Emby-Token": api_key},
-                        params={"Fields": "Overview,ProductionYear,OfficialRating,People,Genres,Studios"},
-                        timeout=10,
-                    )
+                    r = await client.get(f"{url}/Users/{user_id}/Items/{item_id}", headers={"X-Emby-Token": api_key}, params={"Fields": "Overview,ProductionYear,OfficialRating,People,Genres,Studios"}, timeout=10)
                     r.raise_for_status()
                     item = r.json()
                 except Exception:
                     continue
-
                 has_img = bool((item.get("ImageTags") or {}).get("Primary"))
                 item_type = item.get("Type", "")
                 people = item.get("People") or []
                 actors = [p.get("Name", "") for p in people if p.get("Name") and p.get("Type") in {"Actor", "GuestStar"}]
                 directors = [p.get("Name", "") for p in people if p.get("Name") and p.get("Type") == "Director"]
                 genres = item.get("Genres") or []
-
                 if item_type == "Series":
                     try:
-                        ep_r = await client.get(
-                            f"{url}/Shows/{item_id}/Episodes",
-                            headers={"X-Emby-Token": api_key},
-                            params={"UserId": user_id, "Fields": "Overview", "Limit": 500},
-                            timeout=15,
-                        )
+                        ep_r = await client.get(f"{url}/Shows/{item_id}/Episodes", headers={"X-Emby-Token": api_key}, params={"UserId": user_id, "Fields": "Overview", "Limit": 500}, timeout=15)
                         ep_r.raise_for_status()
                         episodes = ep_r.json().get("Items", [])
                     except Exception:
@@ -1474,17 +1465,16 @@ async def tvbox_emby(request: Request):
                         s = ep.get("ParentIndexNumber", 1)
                         e = ep.get("IndexNumber", 0)
                         label = f"S{s}E{e:02d} {ep.get('Name', '')}"
-                        parts.append(f"{label}${base_url}/api/emby/stream/{ep['Id']}")
+                        parts.append(f"{label}${base_url}/api/emby/{server_id}/stream/{ep['Id']}")
                     play_url = "#".join(parts) if parts else f"暂无剧集${url}"
                 else:
-                    play_url = f"播放${base_url}/api/emby/stream/{item_id}"
-
+                    play_url = f"播放${base_url}/api/emby/{server_id}/stream/{item_id}"
                 vod_list.append({
                     "vod_id": item_id,
                     "vod_name": item.get("Name", ""),
                     "type_id": 1,
                     "type_name": item_type,
-                    "vod_pic": f"{base_url}/api/emby/image/{item_id}?w=320" if has_img else "",
+                    "vod_pic": f"{base_url}/api/emby/{server_id}/image/{item_id}?w=320" if has_img else "",
                     "vod_year": item.get("ProductionYear", ""),
                     "vod_remarks": str(item.get("ProductionYear", "")),
                     "vod_actor": ",".join(actors[:12]),
@@ -1492,18 +1482,10 @@ async def tvbox_emby(request: Request):
                     "vod_class": ",".join(genres[:4]),
                     "vod_content": (item.get("Overview") or "")[:500],
                     "vod_time": "",
-                    "vod_play_from": "Emby",
+                    "vod_play_from": server.get("name", "Emby"),
                     "vod_play_url": play_url,
                 })
-
-            return JSONResponse({
-                "code": 1, "msg": "数据列表",
-                "page": 1, "pagecount": 1,
-                "limit": len(vod_list), "total": len(vod_list),
-                "list": vod_list,
-                "class": class_list,
-            })
-
+            return JSONResponse({"code": 1, "msg": "数据列表", "page": 1, "pagecount": 1, "limit": len(vod_list), "total": len(vod_list), "list": vod_list, "class": class_list})
     return JSONResponse({"code": 1, "msg": "ok", "list": [], "class": class_list})
 
 
@@ -1512,17 +1494,102 @@ app.mount("/videos", StaticFiles(directory=str(VIDEO_DIR)), name="videos")
 
 # ── Emby 集成 ──────────────────────────────────────────
 
+class EmbyServerIn(BaseModel):
+    id: Optional[str] = None
+    name: Optional[str] = None
+    url: Optional[str] = None
+    api_key: Optional[str] = None
+    user_id: Optional[str] = None
+    password: Optional[str] = None
+    enabled: Optional[bool] = None
+    tvbox_enabled: Optional[bool] = None
+    allowed_library_ids: Optional[List[str]] = None
+    hidden_library_ids: Optional[List[str]] = None
+
+
+def _emby_server_admin_summary(server: dict) -> dict:
+    return {
+        "id": server["id"],
+        "name": server.get("name", server["id"]),
+        "url": server.get("url", ""),
+        "user_id": server.get("user_id", ""),
+        "enabled": server.get("enabled", True),
+        "tvbox_enabled": server.get("tvbox_enabled", True),
+        "allowed_library_ids": server.get("allowed_library_ids", []),
+        "hidden_library_ids": server.get("hidden_library_ids", []),
+        "has_api_key": bool(server.get("api_key", "")),
+        "has_password": bool(server.get("password_hash", "")),
+    }
+
+
 @app.get("/api/emby/status")
 async def emby_status():
-    return {
-        "configured": bool(emby_config.get("url") and emby_config.get("api_key")),
-        "need_auth": bool(emby_config.get("password_hash", "")),
-    }
+    active = [_emby_public_server_summary(s) for s in emby_servers if s.get("enabled", True)]
+    first = active[0] if active else {"configured": False, "need_auth": False}
+    return {**first, "servers": active}
+
+
+@app.get("/api/emby/servers")
+async def list_emby_servers():
+    return [_emby_server_admin_summary(s) for s in emby_servers]
+
+
+@app.post("/api/emby/servers")
+async def create_emby_server(data: EmbyServerIn):
+    payload = data.model_dump()
+    server = _normalize_emby_server(payload, len(emby_servers))
+    if any(s.get("id") == server["id"] for s in emby_servers):
+        raise HTTPException(400, "Emby 源 ID 已存在")
+    if "password" in payload and payload.get("password") is not None:
+        pw = (payload.get("password") or "").strip()
+        server["password_hash"] = hashlib.sha256(pw.encode()).hexdigest() if pw else ""
+    emby_servers.append(server)
+    save_data()
+    return _emby_server_admin_summary(server)
+
+
+@app.put("/api/emby/servers/{server_id}")
+async def update_emby_server(server_id: str, data: EmbyServerIn):
+    server = _get_emby_server(server_id, require_enabled=False)
+    payload = data.model_dump(exclude_unset=True)
+    if "name" in payload and payload["name"] is not None:
+        server["name"] = payload["name"].strip() or server["name"]
+    if "url" in payload and payload["url"] is not None:
+        server["url"] = payload["url"].rstrip("/")
+    if payload.get("api_key"):
+        server["api_key"] = payload["api_key"]
+    if "user_id" in payload and payload["user_id"] is not None:
+        server["user_id"] = payload["user_id"]
+    if "enabled" in payload and payload["enabled"] is not None:
+        server["enabled"] = bool(payload["enabled"])
+    if "tvbox_enabled" in payload and payload["tvbox_enabled"] is not None:
+        server["tvbox_enabled"] = bool(payload["tvbox_enabled"])
+    if "allowed_library_ids" in payload and payload["allowed_library_ids"] is not None:
+        server["allowed_library_ids"] = [str(x) for x in payload["allowed_library_ids"] if str(x).strip()]
+    if "hidden_library_ids" in payload and payload["hidden_library_ids"] is not None:
+        server["hidden_library_ids"] = [str(x) for x in payload["hidden_library_ids"] if str(x).strip()]
+    if "password" in payload and payload["password"] is not None:
+        pw = (payload["password"] or "").strip()
+        server["password_hash"] = hashlib.sha256(pw.encode()).hexdigest() if pw else ""
+    save_data()
+    return _emby_server_admin_summary(server)
+
+
+@app.delete("/api/emby/servers/{server_id}")
+async def delete_emby_server(server_id: str):
+    global emby_servers
+    before = len(emby_servers)
+    emby_servers = [s for s in emby_servers if s.get("id") != server_id]
+    if len(emby_servers) == before:
+        raise HTTPException(404, "Emby 源不存在")
+    save_data()
+    return {"ok": True}
 
 
 @app.post("/api/emby/auth")
 async def emby_auth(data: dict):
-    pw_hash = emby_config.get("password_hash", "")
+    server = _get_emby_server(data.get("server_id"), require_enabled=True)
+    pw_hash = server.get("password_hash", "")
     if not pw_hash:
         return {"ok": True}
     if hashlib.sha256(data.get("password", "").encode()).hexdigest() != pw_hash:
@@ -1532,39 +1599,34 @@ async def emby_auth(data: dict):
 
 @app.get("/api/emby/config")
 async def get_emby_config():
-    return {
-        "url": emby_config.get("url", ""),
-        "user_id": emby_config.get("user_id", ""),
-        "has_api_key": bool(emby_config.get("api_key", "")),
-        "has_password": bool(emby_config.get("password_hash", "")),
-    }
+    server = _get_emby_server(None, require_enabled=False)
+    return _emby_server_admin_summary(server)
 
 
 @app.put("/api/emby/config")
 async def set_emby_config(data: dict):
-    if "url" in data:
-        emby_config["url"] = data["url"].rstrip("/")
-    if data.get("api_key"):
-        emby_config["api_key"] = data["api_key"]
-    if "user_id" in data:
-        emby_config["user_id"] = data["user_id"]
-    if "password" in data:
-        pw = data["password"].strip()
-        emby_config["password_hash"] = hashlib.sha256(pw.encode()).hexdigest() if pw else ""
-    save_data()
-    return {"ok": True}
+    if emby_servers:
+        server = _get_emby_server(None, require_enabled=False)
+        payload = EmbyServerIn(**data)
+        return await update_emby_server(server["id"], payload)
+    payload = EmbyServerIn(**data)
+    if not payload.id:
+        payload.id = "default"
+    if not payload.name:
+        payload.name = "默认 Emby"
+    return await create_emby_server(payload)
 
 
 @app.post("/api/emby/test")
-async def test_emby():
-    url = emby_config.get("url", "")
-    api_key = emby_config.get("api_key", "")
+async def test_emby(server_id: str = ""):
+    server = _get_emby_server(server_id or None, require_enabled=False)
+    url = server.get("url", "")
+    api_key = server.get("api_key", "")
     if not url or not api_key:
         return {"ok": False, "error": "请先填写服务器地址和 API Key"}
     try:
         async with httpx.AsyncClient(follow_redirects=True) as client:
-            r = await client.get(f"{url}/System/Info/Public",
-                                 headers={"X-Emby-Token": api_key}, timeout=8)
+            r = await client.get(f"{url}/System/Info/Public", headers={"X-Emby-Token": api_key}, timeout=8)
             r.raise_for_status()
             info = r.json()
             return {"ok": True, "msg": f"连接成功：{info.get('ServerName', 'Emby')} v{info.get('Version', '?')}"}
@@ -1575,15 +1637,15 @@ async def test_emby():
 
 
 @app.get("/api/emby/users")
-async def emby_users():
-    url = emby_config.get("url", "")
-    api_key = emby_config.get("api_key", "")
+async def emby_users(server_id: str = ""):
+    server = _get_emby_server(server_id or None, require_enabled=False)
+    url = server.get("url", "")
+    api_key = server.get("api_key", "")
     if not url or not api_key:
         raise HTTPException(400, "Emby 未配置")
     try:
         async with httpx.AsyncClient(follow_redirects=True) as client:
-            r = await client.get(f"{url}/Users",
-                                 headers={"X-Emby-Token": api_key}, timeout=10)
+            r = await client.get(f"{url}/Users", headers={"X-Emby-Token": api_key}, timeout=10)
             r.raise_for_status()
             return [{"id": u["Id"], "name": u["Name"]} for u in r.json()]
     except Exception as e:
@@ -1591,36 +1653,22 @@ async def emby_users():
 
 
 @app.get("/api/emby/libraries")
-async def emby_libraries():
-    url = emby_config.get("url", "")
-    api_key = emby_config.get("api_key", "")
-    user_id = emby_config.get("user_id", "")
-    if not url or not api_key or not user_id:
-        raise HTTPException(400, "Emby 未完整配置")
+async def emby_libraries(server_id: str = ""):
+    server = _get_emby_server(server_id or None)
     try:
-        async with _make_http_client() as client:
-            r = await client.get(f"{url}/Users/{user_id}/Views",
-                                 headers={"X-Emby-Token": api_key}, timeout=10)
-            r.raise_for_status()
-            items = r.json().get("Items", [])
-            libs = []
-            for i in items:
-                ctype = (i.get("CollectionType") or "").lower()
-                name = (i.get("Name") or "").strip()
-                if ctype in {"movies", "tvshows", "mixed"} or i.get("Type") == "CollectionFolder":
-                    libs.append({"id": i["Id"], "name": name or i["Id"]})
-            return libs
+        libs = await _fetch_emby_views(server)
+        return [{"id": i["Id"], "name": (i.get("Name") or i["Id"])} for i in libs]
     except Exception as e:
         raise HTTPException(502, str(e))
 
 
-def _map_emby_items(raw_items: list) -> list:
+def _map_emby_items(raw_items: list, server_id: str) -> list:
     items = []
     for i in raw_items:
         if i.get("Type") not in {"Movie", "Series"}:
             continue
         has_img = bool((i.get("ImageTags") or {}).get("Primary"))
-        thumb = f"/api/emby/image/{i['Id']}?w=200" if has_img else ""
+        thumb = f"/api/emby/{server_id}/image/{i['Id']}?w=200" if has_img else ""
         items.append({
             "id": i["Id"],
             "name": i.get("Name", ""),
@@ -1634,13 +1682,14 @@ def _map_emby_items(raw_items: list) -> list:
 
 
 @app.get("/api/emby/items")
-async def emby_items(parent_id: str = "", pg: int = 1, limit: int = 40):
-    url = emby_config.get("url", "")
-    api_key = emby_config.get("api_key", "")
-    user_id = emby_config.get("user_id", "")
+async def emby_items(parent_id: str = "", pg: int = 1, limit: int = 40, server_id: str = ""):
+    server = _get_emby_server(server_id or None)
+    url = server.get("url", "")
+    api_key = server.get("api_key", "")
+    user_id = server.get("user_id", "")
     if not url or not api_key or not user_id:
         raise HTTPException(400, "Emby 未完整配置")
-
+    allowed_ids = {i["Id"] for i in (await _fetch_emby_views(server))}
     try:
         async with _make_http_client() as client:
             params = {
@@ -1653,36 +1702,26 @@ async def emby_items(parent_id: str = "", pg: int = 1, limit: int = 40):
                 "SortOrder": "Ascending",
             }
             if parent_id:
+                if parent_id not in allowed_ids:
+                    raise HTTPException(403, "该媒体库未授权")
                 params["ParentId"] = parent_id
-                r = await client.get(f"{url}/Users/{user_id}/Items",
-                                     headers={"X-Emby-Token": api_key},
-                                     params=params, timeout=12)
+                r = await client.get(f"{url}/Users/{user_id}/Items", headers={"X-Emby-Token": api_key}, params=params, timeout=12)
                 r.raise_for_status()
                 data = r.json()
-                items = _map_emby_items(data.get("Items", []))
+                items = _map_emby_items(data.get("Items", []), server["id"])
                 return {"items": items, "total": data.get("TotalRecordCount", len(items)), "page": pg}
-
-            # root/all view: some Emby servers fail on querying everything at once.
-            views_r = await client.get(f"{url}/Users/{user_id}/Views",
-                                       headers={"X-Emby-Token": api_key}, timeout=10)
-            views_r.raise_for_status()
-            views = views_r.json().get("Items", [])
-            libs = [v for v in views if (v.get("CollectionType") or "").lower() in {"movies", "tvshows", "mixed"} or v.get("Type") == "CollectionFolder"]
             collected = []
-            for lib in libs:
+            for lib_id in allowed_ids:
                 lib_params = dict(params)
-                lib_params["ParentId"] = lib["Id"]
+                lib_params["ParentId"] = lib_id
                 try:
-                    lr = await client.get(f"{url}/Users/{user_id}/Items",
-                                          headers={"X-Emby-Token": api_key},
-                                          params=lib_params, timeout=12)
+                    lr = await client.get(f"{url}/Users/{user_id}/Items", headers={"X-Emby-Token": api_key}, params=lib_params, timeout=12)
                     lr.raise_for_status()
                     collected.extend(lr.json().get("Items", []))
                 except Exception:
                     continue
-            items = _map_emby_items(collected)
-            seen = set()
-            dedup = []
+            items = _map_emby_items(collected, server["id"])
+            seen = set(); dedup = []
             for item in items:
                 if item["id"] in seen:
                     continue
@@ -1692,34 +1731,27 @@ async def emby_items(parent_id: str = "", pg: int = 1, limit: int = 40):
             total = len(dedup)
             start = max(0, (pg - 1) * limit)
             return {"items": dedup[start:start+limit], "total": total, "page": pg}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(502, str(e))
 
 
 @app.get("/api/emby/detail/{item_id}")
-async def emby_detail(item_id: str):
-    url = emby_config.get("url", "")
-    api_key = emby_config.get("api_key", "")
-    user_id = emby_config.get("user_id", "")
+async def emby_detail(item_id: str, server_id: str = ""):
+    server = _get_emby_server(server_id or None)
+    url = server.get("url", "")
+    api_key = server.get("api_key", "")
+    user_id = server.get("user_id", "")
     if not url or not api_key or not user_id:
         raise HTTPException(400, "Emby 未完整配置")
     try:
         async with _make_http_client() as client:
-            r = await client.get(
-                f"{url}/Users/{user_id}/Items/{item_id}",
-                headers={"X-Emby-Token": api_key},
-                params={"Fields": "Overview,ProductionYear,OfficialRating,People,Genres,Studios,Taglines,CommunityRating,PremiereDate,RunTimeTicks"},
-                timeout=12,
-            )
+            r = await client.get(f"{url}/Users/{user_id}/Items/{item_id}", headers={"X-Emby-Token": api_key}, params={"Fields": "Overview,ProductionYear,OfficialRating,People,Genres,Studios,Taglines,CommunityRating,PremiereDate,RunTimeTicks"}, timeout=12)
             r.raise_for_status()
             item = r.json()
             people = item.get("People") or []
-            people_out = [{
-                "id": p.get("Id", ""),
-                "name": p.get("Name", ""),
-                "type": p.get("Type", ""),
-                "role": p.get("Role", ""),
-            } for p in people if p.get("Name")]
+            people_out = [{"id": p.get("Id", ""), "name": p.get("Name", ""), "type": p.get("Type", ""), "role": p.get("Role", "")} for p in people if p.get("Name")]
             return {
                 "id": item.get("Id", item_id),
                 "name": item.get("Name", ""),
@@ -1739,150 +1771,112 @@ async def emby_detail(item_id: str):
 
 
 @app.get("/api/emby/person/{person_id}")
-async def emby_person_items(person_id: str, pg: int = 1, limit: int = 40):
-    url = emby_config.get("url", "")
-    api_key = emby_config.get("api_key", "")
-    user_id = emby_config.get("user_id", "")
+async def emby_person_items(person_id: str, pg: int = 1, limit: int = 40, server_id: str = ""):
+    server = _get_emby_server(server_id or None)
+    url = server.get("url", "")
+    api_key = server.get("api_key", "")
+    user_id = server.get("user_id", "")
     if not url or not api_key or not user_id:
         raise HTTPException(400, "Emby 未完整配置")
     try:
         async with _make_http_client() as client:
-            params = {
-                "PersonIds": person_id,
-                "IncludeItemTypes": "Movie,Series",
-                "Recursive": "true",
-                "Fields": "PrimaryImageAspectRatio,Overview,ProductionYear,OfficialRating,People,Genres",
-                "StartIndex": (pg - 1) * limit,
-                "Limit": limit,
-                "SortBy": "SortName",
-                "SortOrder": "Ascending",
-            }
-            r = await client.get(f"{url}/Users/{user_id}/Items",
-                                 headers={"X-Emby-Token": api_key},
-                                 params=params, timeout=12)
+            params = {"PersonIds": person_id, "IncludeItemTypes": "Movie,Series", "Recursive": "true", "Fields": "PrimaryImageAspectRatio,Overview,ProductionYear,OfficialRating,People,Genres", "StartIndex": (pg - 1) * limit, "Limit": limit, "SortBy": "SortName", "SortOrder": "Ascending"}
+            r = await client.get(f"{url}/Users/{user_id}/Items", headers={"X-Emby-Token": api_key}, params=params, timeout=12)
             r.raise_for_status()
             data = r.json()
-            items = _map_emby_items(data.get("Items", []))
+            items = _map_emby_items(data.get("Items", []), server["id"])
             return {"items": items, "total": data.get("TotalRecordCount", len(items)), "page": pg}
     except Exception as e:
         raise HTTPException(502, str(e))
 
 
 @app.get("/api/emby/episodes/{series_id}")
-async def emby_episodes(series_id: str):
-    url = emby_config.get("url", "")
-    api_key = emby_config.get("api_key", "")
-    user_id = emby_config.get("user_id", "")
+async def emby_episodes(series_id: str, server_id: str = ""):
+    server = _get_emby_server(server_id or None)
+    url = server.get("url", "")
+    api_key = server.get("api_key", "")
+    user_id = server.get("user_id", "")
     if not url or not api_key:
         raise HTTPException(400, "Emby 未配置")
     try:
         async with httpx.AsyncClient(follow_redirects=True) as client:
-            r = await client.get(f"{url}/Shows/{series_id}/Episodes",
-                                 headers={"X-Emby-Token": api_key},
-                                 params={"UserId": user_id, "Fields": "Overview", "Limit": 500},
-                                 timeout=10)
+            r = await client.get(f"{url}/Shows/{series_id}/Episodes", headers={"X-Emby-Token": api_key}, params={"UserId": user_id, "Fields": "Overview", "Limit": 500}, timeout=10)
             r.raise_for_status()
-            return [{"id": i["Id"], "name": i.get("Name", ""),
-                     "season": i.get("ParentIndexNumber", 1),
-                     "episode": i.get("IndexNumber", 0)}
-                    for i in r.json().get("Items", [])]
+            return [{"id": i["Id"], "name": i.get("Name", ""), "season": i.get("ParentIndexNumber", 1), "episode": i.get("IndexNumber", 0)} for i in r.json().get("Items", [])]
     except Exception as e:
         raise HTTPException(502, str(e))
 
 
-@app.get("/api/emby/image/{item_id}")
-async def emby_image(item_id: str, w: int = 200):
-    """代理 Emby 封面图片并缓存到本地，减少重复回源开销。"""
-    from fastapi.responses import Response
-    url = emby_config.get("url", "")
-    api_key = emby_config.get("api_key", "")
+@app.get("/api/emby/{server_id}/image/{item_id}")
+async def emby_image(server_id: str, item_id: str, w: int = 200):
+    server = _get_emby_server(server_id)
+    url = server.get("url", "")
+    api_key = server.get("api_key", "")
     if not url or not api_key:
         raise HTTPException(400, "Emby 未配置")
     width = max(120, min(int(w or 200), 600))
-    cache_file = EMBY_IMAGE_CACHE_DIR / f"{item_id}_{width}.img"
+    cache_file = EMBY_IMAGE_CACHE_DIR / f"{server_id}_{item_id}_{width}.img"
     if cache_file.exists():
         media_type = "image/jpeg"
         if cache_file.suffix.lower() == '.png':
             media_type = 'image/png'
         return FileResponse(cache_file, media_type=media_type, headers={"Cache-Control": "public, max-age=86400"})
-    image_url = (f"{url}/Items/{item_id}/Images/Primary"
-                 f"?api_key={api_key}&maxWidth={width}&quality=82")
+    image_url = f"{url}/Items/{item_id}/Images/Primary?api_key={api_key}&maxWidth={width}&quality=82"
     try:
         async with _make_http_client() as client:
             r = await client.get(image_url, timeout=10)
             r.raise_for_status()
             content_type = r.headers.get("content-type", "image/jpeg").split(';')[0].strip()
-            ext = '.jpg'
-            if 'png' in content_type:
-                ext = '.png'
-            target = EMBY_IMAGE_CACHE_DIR / f"{item_id}_{width}{ext}"
+            ext = '.png' if 'png' in content_type else '.jpg'
+            target = EMBY_IMAGE_CACHE_DIR / f"{server_id}_{item_id}_{width}{ext}"
             target.write_bytes(r.content)
             if target != cache_file and cache_file.exists():
                 cache_file.unlink(missing_ok=True)
-            return Response(
-                content=r.content,
-                media_type=content_type,
-                headers={"Cache-Control": "public, max-age=86400"},
-            )
+            return Response(content=r.content, media_type=content_type, headers={"Cache-Control": "public, max-age=86400"})
     except Exception:
         raise HTTPException(404, "图片不可用")
 
 
-@app.api_route("/api/emby/stream/{item_id}", methods=["GET", "HEAD"])
-async def emby_stream(item_id: str, request: Request):
-    """Reverse-proxy Emby stream for TVBox compatibility."""
-    url = emby_config.get("url", "")
-    api_key = emby_config.get("api_key", "")
+@app.api_route("/api/emby/{server_id}/stream/{item_id}", methods=["GET", "HEAD"])
+async def emby_stream(server_id: str, item_id: str, request: Request):
+    server = _get_emby_server(server_id)
+    url = server.get("url", "")
+    api_key = server.get("api_key", "")
     if not url or not api_key:
         raise HTTPException(400, "Emby 未配置")
-
     upstream_url = f"{url}/Videos/{item_id}/stream?api_key={api_key}&static=true"
     headers = {}
     range_header = request.headers.get("range") or request.headers.get("Range")
     if range_header:
         headers["Range"] = range_header
-
     try:
         async with _make_http_client() as client:
             if request.method == "HEAD":
                 upstream = await client.head(upstream_url, headers=headers, timeout=20)
-                passthrough_headers = {}
-                for key in ["content-type", "content-length", "accept-ranges", "content-range", "cache-control", "etag", "last-modified", "content-disposition"]:
-                    if key in upstream.headers:
-                        passthrough_headers[key] = upstream.headers[key]
+                passthrough_headers = {k: upstream.headers[k] for k in ["content-type", "content-length", "accept-ranges", "content-range", "cache-control", "etag", "last-modified", "content-disposition"] if k in upstream.headers}
                 return Response(status_code=upstream.status_code, headers=passthrough_headers)
-
             upstream = await client.stream("GET", upstream_url, headers=headers, timeout=None)
             await upstream.__aenter__()
-
-            passthrough_headers = {}
-            for key in ["content-type", "content-length", "accept-ranges", "content-range", "cache-control", "etag", "last-modified", "content-disposition"]:
-                if key in upstream.headers:
-                    passthrough_headers[key] = upstream.headers[key]
-
+            passthrough_headers = {k: upstream.headers[k] for k in ["content-type", "content-length", "accept-ranges", "content-range", "cache-control", "etag", "last-modified", "content-disposition"] if k in upstream.headers}
             async def body_iter():
                 try:
                     async for chunk in upstream.aiter_bytes():
                         yield chunk
                 finally:
                     await upstream.aclose()
-
-            return StreamingResponse(
-                body_iter(),
-                status_code=upstream.status_code,
-                headers=passthrough_headers,
-                media_type=upstream.headers.get("content-type", "video/mp4"),
-            )
+            return StreamingResponse(body_iter(), status_code=upstream.status_code, headers=passthrough_headers, media_type=upstream.headers.get("content-type", "video/mp4"))
     except httpx.HTTPStatusError as e:
         raise HTTPException(e.response.status_code, f"Emby 上游返回 HTTP {e.response.status_code}")
     except Exception as e:
         raise HTTPException(502, f"Emby 播放代理失败: {e}")
 
 
-@app.get("/api/emby/direct/{item_id}")
-async def emby_direct(item_id: str):
-    url = emby_config.get("url", "")
-    api_key = emby_config.get("api_key", "")
+@app.get("/api/emby/{server_id}/direct/{item_id}")
+async def emby_direct(server_id: str, item_id: str):
+    server = _get_emby_server(server_id)
+    url = server.get("url", "")
+    api_key = server.get("api_key", "")
     if not url or not api_key:
         raise HTTPException(400, "Emby 未配置")
     return {"url": f"{url}/Videos/{item_id}/stream?api_key={api_key}&static=true"}
+

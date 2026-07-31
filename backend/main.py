@@ -1861,7 +1861,8 @@ async def _resolve_emby_source_url(server: dict, item_id: str) -> Optional[str]:
             )
             r.raise_for_status()
             data = r.json()
-    except Exception:
+    except Exception as e:
+        print(f"[emby_resolve] item {item_id} metadata fetch failed: {e!r}")
         return None
     path = data.get("Path") or ""
     if not path:
@@ -1869,6 +1870,7 @@ async def _resolve_emby_source_url(server: dict, item_id: str) -> Optional[str]:
             if ms.get("Path"):
                 path = ms["Path"]
                 break
+    print(f"[emby_resolve] item {item_id} resolved path: {path!r}")
     return path if path.startswith("http://") or path.startswith("https://") else None
 
 

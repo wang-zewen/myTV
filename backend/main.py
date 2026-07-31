@@ -1469,10 +1469,10 @@ async def tvbox_emby(server_id: str, request: Request):
                         s = ep.get("ParentIndexNumber", 1)
                         e = ep.get("IndexNumber", 0)
                         label = f"S{s}E{e:02d} {ep.get('Name', '')}"
-                        parts.append(f"{label}${base_url}/api/emby/{server_id}/stream/{ep['Id']}.mp4")
+                        parts.append(f"{label}${url}/Videos/{ep['Id']}/stream.mp4?api_key={api_key}&static=true")
                     play_url = "#".join(parts) if parts else f"暂无剧集${url}"
                 else:
-                    play_url = f"播放${base_url}/api/emby/{server_id}/stream/{item_id}.mp4"
+                    play_url = f"播放${url}/Videos/{item_id}/stream.mp4?api_key={api_key}&static=true"
                 vod_list.append({
                     "vod_id": item_id,
                     "vod_name": item.get("Name", ""),
@@ -1861,8 +1861,7 @@ async def _resolve_emby_source_url(server: dict, item_id: str) -> Optional[str]:
             )
             r.raise_for_status()
             data = r.json()
-    except Exception as e:
-        print(f"[emby_resolve] item {item_id} metadata fetch failed: {e!r}")
+    except Exception:
         return None
     path = data.get("Path") or ""
     if not path:
@@ -1870,7 +1869,6 @@ async def _resolve_emby_source_url(server: dict, item_id: str) -> Optional[str]:
             if ms.get("Path"):
                 path = ms["Path"]
                 break
-    print(f"[emby_resolve] item {item_id} resolved path: {path!r}")
     return path if path.startswith("http://") or path.startswith("https://") else None
 
 

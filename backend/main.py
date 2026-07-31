@@ -31,8 +31,8 @@ _HTTP_TIMEOUT = httpx.Timeout(12.0, connect=5.0)
 
 def _make_http_client(**kwargs) -> httpx.AsyncClient:
     """Shared async HTTP client with consistent timeouts and connection limits."""
+    kwargs.setdefault("follow_redirects", True)
     return httpx.AsyncClient(
-        follow_redirects=True,
         timeout=_HTTP_TIMEOUT,
         limits=_HTTP_LIMITS,
         **kwargs,
@@ -1855,25 +1855,33 @@ async def emby_stream(server_id: str, item_id: str, request: Request):
     range_header = request.headers.get("range") or request.headers.get("Range")
     if range_header:
         headers["Range"] = range_header
-    if request.method == "HEAD":
-        async with _make_http_client() as client:
-            try:
-                upstream = await client.head(upstream_url, headers=headers, timeout=20)
-            except Exception as e:
-                raise HTTPException(502, f"Emby 播放代理失败: {e}")
-            passthrough_headers = {k: upstream.headers[k] for k in ["content-type", "content-length", "accept-ranges", "content-range", "cache-control", "etag", "last-modified", "content-disposition"] if k in upstream.headers}
-            return Response(status_code=upstream.status_code, headers=passthrough_headers)
-
+    # 很多 Emby 库（比如挂 AList/网盘直链）本身就是对 /stream 请求做 302 跳转，不自己出数据。
+    # 这种情况下不要在服务端跟着跳转把视频吃下来再转发，直接把跳转地址回给播放器，
+    # 让它自己去连真实地址，视频数据就不会经过这台服务器。
     # client.stream() 只能作 async with 用，不能 await；这里要把响应体流跨出本函数交给
-    # StreamingResponse 消费，所以改用 send(..., stream=True)，client 的关闭挪到 body_iter 结束时
-    client = _make_http_client()
+    # StreamingResponse 消费，所以改用 send(..., stream=True)，client 的关闭挪到用完之后
+    client = _make_http_client(follow_redirects=False)
     try:
-        req = client.build_request("GET", upstream_url, headers=headers, timeout=None)
+        req = client.build_request(request.method, upstream_url, headers=headers, timeout=None)
         upstream = await client.send(req, stream=True)
     except Exception as e:
         await client.aclose()
         raise HTTPException(502, f"Emby 播放代理失败: {e}")
+
+    if upstream.is_redirect and "location" in upstream.headers:
+        location = upstream.headers["location"]
+        await upstream.aclose()
+        await client.aclose()
+        return RedirectResponse(location, status_code=302)
+
     passthrough_headers = {k: upstream.headers[k] for k in ["content-type", "content-length", "accept-ranges", "content-range", "cache-control", "etag", "last-modified", "content-disposition"] if k in upstream.headers}
+
+    if request.method == "HEAD":
+        status_code = upstream.status_code
+        await upstream.aclose()
+        await client.aclose()
+        return Response(status_code=status_code, headers=passthrough_headers)
+
     async def body_iter():
         try:
             async for chunk in upstream.aiter_bytes():

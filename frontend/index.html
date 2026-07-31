@@ -1446,6 +1446,7 @@ document.getElementById('loadEmbyLibrariesBtn').addEventListener('click',async()
     const info=document.getElementById('embyLibrariesInfo');
     card.style.display='block';
     info.innerHTML=d.length?d.map(x=>`• ${esc(x.name)} <span style="font-family:'DM Mono',monospace;color:var(--muted)">(${esc(x.id)})</span>`).join('<br>'):'暂无可见媒体库';
+    card.scrollIntoView({behavior:'smooth',block:'nearest'});
   }catch(e){toast('读取失败','error');}
 });
 

@@ -1841,6 +1841,37 @@ async def emby_image(server_id: str, item_id: str, w: int = 200):
         raise HTTPException(404, "图片不可用")
 
 
+async def _resolve_emby_source_url(server: dict, item_id: str) -> Optional[str]:
+    """有些 Emby 库条目本身就是指向外部地址的 strm（比如挂 AList 网盘直链），
+    这种情况下 Emby 的媒体源 Path 字段就是那个 http(s) 地址。能拿到就直接把这个地址
+    交给播放器，绕开 Emby 自己代理数据这一层；拿不到/不是 URL 就返回 None，调用方
+    照原来的方式走 Emby 的 /stream 接口代理。"""
+    url = server.get("url", "")
+    api_key = server.get("api_key", "")
+    user_id = server.get("user_id", "")
+    if not (url and api_key and user_id):
+        return None
+    try:
+        async with _make_http_client() as client:
+            r = await client.get(
+                f"{url}/Users/{user_id}/Items/{item_id}",
+                headers={"X-Emby-Token": api_key},
+                params={"Fields": "Path,MediaSources"},
+                timeout=10,
+            )
+            r.raise_for_status()
+            data = r.json()
+    except Exception:
+        return None
+    path = data.get("Path") or ""
+    if not path:
+        for ms in data.get("MediaSources") or []:
+            if ms.get("Path"):
+                path = ms["Path"]
+                break
+    return path if path.startswith("http://") or path.startswith("https://") else None
+
+
 @app.api_route("/api/emby/{server_id}/stream/{item_id}", methods=["GET", "HEAD"])
 async def emby_stream(server_id: str, item_id: str, request: Request):
     # URL 带一个假的 .mp4 后缀是给部分靠文件名后缀嗅探格式的 TVBox 播放器识别用的，这里去掉
@@ -1850,13 +1881,18 @@ async def emby_stream(server_id: str, item_id: str, request: Request):
     api_key = server.get("api_key", "")
     if not url or not api_key:
         raise HTTPException(400, "Emby 未配置")
+
+    source_url = await _resolve_emby_source_url(server, item_id)
+    if source_url:
+        return RedirectResponse(source_url, status_code=302)
+
     upstream_url = f"{url}/Videos/{item_id}/stream?api_key={api_key}&static=true"
     headers = {}
     range_header = request.headers.get("range") or request.headers.get("Range")
     if range_header:
         headers["Range"] = range_header
-    # 很多 Emby 库（比如挂 AList/网盘直链）本身就是对 /stream 请求做 302 跳转，不自己出数据。
-    # 这种情况下不要在服务端跟着跳转把视频吃下来再转发，直接把跳转地址回给播放器，
+    # 万一 Emby 自己对 /stream 请求做 302 跳转（不是靠上面的 Path 字段而是靠自己代理层跳转），
+    # 也不要在服务端跟着跳转把视频吃下来再转发，直接把跳转地址回给播放器，
     # 让它自己去连真实地址，视频数据就不会经过这台服务器。
     # client.stream() 只能作 async with 用，不能 await；这里要把响应体流跨出本函数交给
     # StreamingResponse 消费，所以改用 send(..., stream=True)，client 的关闭挪到用完之后

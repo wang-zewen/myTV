@@ -1866,8 +1866,8 @@ async def emby_stream(server_id: str, item_id: str, request: Request):
     # StreamingResponse 消费，所以改用 send(..., stream=True)，client 的关闭挪到 body_iter 结束时
     client = _make_http_client()
     try:
-        req = client.build_request("GET", upstream_url, headers=headers)
-        upstream = await client.send(req, stream=True, timeout=None)
+        req = client.build_request("GET", upstream_url, headers=headers, timeout=None)
+        upstream = await client.send(req, stream=True)
     except Exception as e:
         await client.aclose()
         raise HTTPException(502, f"Emby 播放代理失败: {e}")

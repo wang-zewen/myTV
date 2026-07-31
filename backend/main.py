@@ -1853,26 +1853,33 @@ async def emby_stream(server_id: str, item_id: str, request: Request):
     range_header = request.headers.get("range") or request.headers.get("Range")
     if range_header:
         headers["Range"] = range_header
-    try:
+    if request.method == "HEAD":
         async with _make_http_client() as client:
-            if request.method == "HEAD":
+            try:
                 upstream = await client.head(upstream_url, headers=headers, timeout=20)
-                passthrough_headers = {k: upstream.headers[k] for k in ["content-type", "content-length", "accept-ranges", "content-range", "cache-control", "etag", "last-modified", "content-disposition"] if k in upstream.headers}
-                return Response(status_code=upstream.status_code, headers=passthrough_headers)
-            upstream = await client.stream("GET", upstream_url, headers=headers, timeout=None)
-            await upstream.__aenter__()
+            except Exception as e:
+                raise HTTPException(502, f"Emby 播放代理失败: {e}")
             passthrough_headers = {k: upstream.headers[k] for k in ["content-type", "content-length", "accept-ranges", "content-range", "cache-control", "etag", "last-modified", "content-disposition"] if k in upstream.headers}
-            async def body_iter():
-                try:
-                    async for chunk in upstream.aiter_bytes():
-                        yield chunk
-                finally:
-                    await upstream.aclose()
-            return StreamingResponse(body_iter(), status_code=upstream.status_code, headers=passthrough_headers, media_type=upstream.headers.get("content-type", "video/mp4"))
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(e.response.status_code, f"Emby 上游返回 HTTP {e.response.status_code}")
+            return Response(status_code=upstream.status_code, headers=passthrough_headers)
+
+    # client.stream() 只能作 async with 用，不能 await；这里要把响应体流跨出本函数交给
+    # StreamingResponse 消费，所以改用 send(..., stream=True)，client 的关闭挪到 body_iter 结束时
+    client = _make_http_client()
+    try:
+        req = client.build_request("GET", upstream_url, headers=headers)
+        upstream = await client.send(req, stream=True, timeout=None)
     except Exception as e:
+        await client.aclose()
         raise HTTPException(502, f"Emby 播放代理失败: {e}")
+    passthrough_headers = {k: upstream.headers[k] for k in ["content-type", "content-length", "accept-ranges", "content-range", "cache-control", "etag", "last-modified", "content-disposition"] if k in upstream.headers}
+    async def body_iter():
+        try:
+            async for chunk in upstream.aiter_bytes():
+                yield chunk
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+    return StreamingResponse(body_iter(), status_code=upstream.status_code, headers=passthrough_headers, media_type=upstream.headers.get("content-type", "video/mp4"))
 
 
 @app.get("/api/emby/{server_id}/direct/{item_id}")

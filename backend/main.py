@@ -1469,10 +1469,10 @@ async def tvbox_emby(server_id: str, request: Request):
                         s = ep.get("ParentIndexNumber", 1)
                         e = ep.get("IndexNumber", 0)
                         label = f"S{s}E{e:02d} {ep.get('Name', '')}"
-                        parts.append(f"{label}${base_url}/api/emby/{server_id}/stream/{ep['Id']}")
+                        parts.append(f"{label}${base_url}/api/emby/{server_id}/stream/{ep['Id']}.mp4")
                     play_url = "#".join(parts) if parts else f"暂无剧集${url}"
                 else:
-                    play_url = f"播放${base_url}/api/emby/{server_id}/stream/{item_id}"
+                    play_url = f"播放${base_url}/api/emby/{server_id}/stream/{item_id}.mp4"
                 vod_list.append({
                     "vod_id": item_id,
                     "vod_name": item.get("Name", ""),
@@ -1843,6 +1843,8 @@ async def emby_image(server_id: str, item_id: str, w: int = 200):
 
 @app.api_route("/api/emby/{server_id}/stream/{item_id}", methods=["GET", "HEAD"])
 async def emby_stream(server_id: str, item_id: str, request: Request):
+    # URL 带一个假的 .mp4 后缀是给部分靠文件名后缀嗅探格式的 TVBox 播放器识别用的，这里去掉
+    item_id = item_id.rsplit(".", 1)[0] if "." in item_id else item_id
     server = _get_emby_server(server_id)
     url = server.get("url", "")
     api_key = server.get("api_key", "")

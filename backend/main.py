@@ -1386,6 +1386,10 @@ async def tvbox_emby(server_id: str, request: Request):
     if not url or not api_key or not user_id:
         return JSONResponse({"code": -1, "msg": "Emby 未完整配置", "list": [], "class": []})
     ac = request.query_params.get("ac", "list")
+    if ac == "detail" and not request.query_params.get("ids", "").strip():
+        # 部分 TVBox 客户端浏览分类时用 ac=detail&t=&pg=&f= 而不带 ids，
+        # 这种情况应按列表请求处理，否则会因为没有 ids 而返回空列表
+        ac = "list"
     async with _make_http_client() as client:
         try:
             raw_libraries = await _fetch_emby_views(server)

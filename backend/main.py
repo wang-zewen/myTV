@@ -1406,25 +1406,51 @@ async def tvbox_emby(server_id: str, request: Request):
             except ValueError:
                 t_idx = 0
             parent_id = (libraries[t_idx - 1]["id"] if 0 < t_idx <= len(libraries) else "")
-            params = {
+            base_params = {
                 "IncludeItemTypes": "Movie,Series",
                 "Recursive": "true",
                 "Fields": "PrimaryImageAspectRatio,Overview,ProductionYear",
-                "StartIndex": (pg - 1) * limit,
-                "Limit": limit,
                 "SortBy": "DateCreated",
                 "SortOrder": "Descending",
             }
-            if parent_id:
-                params["ParentId"] = parent_id
-            try:
-                r = await client.get(f"{url}/Users/{user_id}/Items", headers={"X-Emby-Token": api_key}, params=params, timeout=15)
-                r.raise_for_status()
-                data = r.json()
-            except Exception as e:
-                return JSONResponse({"code": -1, "msg": str(e), "list": [], "class": class_list})
+            has_filter = bool(server.get("allowed_library_ids") or server.get("hidden_library_ids"))
+            if parent_id or not has_filter:
+                # 选中了具体分类，或者根本没配过滤规则：单次查询就行，ParentId 为空时
+                # 是"全部"（未配过滤时可以放心不带 ParentId 查全库）
+                params = {**base_params, "StartIndex": (pg - 1) * limit, "Limit": limit}
+                if parent_id:
+                    params["ParentId"] = parent_id
+                try:
+                    r = await client.get(f"{url}/Users/{user_id}/Items", headers={"X-Emby-Token": api_key}, params=params, timeout=15)
+                    r.raise_for_status()
+                    data = r.json()
+                except Exception as e:
+                    return JSONResponse({"code": -1, "msg": str(e), "list": [], "class": class_list})
+                raw_items = data.get("Items", [])
+                total = data.get("TotalRecordCount", len(raw_items))
+            else:
+                # "全部"这个视图配了库过滤规则时，不能不带 ParentId 直接查（会绕过白名单/
+                # 黑名单，隐藏库的内容照样会出现在"全部"里）。改成只对过滤后可见的每个库
+                # 分别查、合并再按时间重新排序分页
+                async def _fetch_lib_items(lib_id: str):
+                    p = {**base_params, "ParentId": lib_id, "StartIndex": 0, "Limit": pg * limit}
+                    try:
+                        r = await client.get(f"{url}/Users/{user_id}/Items", headers={"X-Emby-Token": api_key}, params=p, timeout=15)
+                        r.raise_for_status()
+                        d = r.json()
+                        return d.get("Items", []), d.get("TotalRecordCount", 0)
+                    except Exception:
+                        return [], 0
+                results = await asyncio.gather(*(_fetch_lib_items(lib["id"]) for lib in libraries))
+                merged = []
+                total = 0
+                for items, cnt in results:
+                    merged.extend(items)
+                    total += cnt
+                merged.sort(key=lambda it: it.get("DateCreated", ""), reverse=True)
+                raw_items = merged[(pg - 1) * limit: pg * limit]
             vod_list = []
-            for item in data.get("Items", []):
+            for item in raw_items:
                 has_img = bool((item.get("ImageTags") or {}).get("Primary"))
                 vod_list.append({
                     "vod_id": item["Id"],
@@ -1435,7 +1461,6 @@ async def tvbox_emby(server_id: str, request: Request):
                     "vod_remarks": str(item.get("ProductionYear", "")),
                     "vod_time": "",
                 })
-            total = data.get("TotalRecordCount", len(vod_list))
             pagecount = max(1, (total + limit - 1) // limit)
             return JSONResponse({"code": 1, "msg": "数据列表", "page": pg, "pagecount": pagecount, "limit": limit, "total": total, "list": vod_list, "class": class_list})
         elif ac == "detail":

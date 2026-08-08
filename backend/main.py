@@ -29,9 +29,13 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 _HTTP_LIMITS = httpx.Limits(max_connections=30, max_keepalive_connections=10)
 _HTTP_TIMEOUT = httpx.Timeout(12.0, connect=5.0)
 
+_DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
 def _make_http_client(**kwargs) -> httpx.AsyncClient:
-    """Shared async HTTP client with consistent timeouts and connection limits."""
+    """Shared async HTTP client with consistent timeouts and connection limits.
+    带一个常见浏览器 UA——部分采集站会针对默认的 python-httpx UA 单独限制搜索等接口。"""
     kwargs.setdefault("follow_redirects", True)
+    kwargs.setdefault("headers", {"User-Agent": _DEFAULT_USER_AGENT})
     return httpx.AsyncClient(
         timeout=_HTTP_TIMEOUT,
         limits=_HTTP_LIMITS,
@@ -650,7 +654,7 @@ async def check_subscription(sub: Subscription):
     if sub.status != "active":
         return
 
-    async with httpx.AsyncClient(follow_redirects=True) as client:
+    async with _make_http_client() as client:
         detail = await fetch_vod_detail(client, sub.source_url, sub.vod_id)
 
     sub.last_checked = datetime.now().isoformat()
@@ -847,7 +851,7 @@ async def search_videos(req: SearchRequest):
     urls = req.source_urls or [s["url"] for s in api_sources if s.get("enabled", True)]
     if not urls:
         raise HTTPException(400, "请先添加采集站接口")
-    async with httpx.AsyncClient(follow_redirects=True) as client:
+    async with _make_http_client() as client:
         raw = await asyncio.gather(*[search_single_source(client, u, req.keyword) for u in urls])
     all_results = []
     errors = []
@@ -1118,7 +1122,7 @@ async def add_subscription(req: SubscribeRequest):
                        req.source_url, req.source_name, req.vod_pic or "")
 
     try:
-        async with httpx.AsyncClient(follow_redirects=True) as client:
+        async with _make_http_client() as client:
             detail = await fetch_vod_detail(client, req.source_url, req.vod_id)
         if detail:
             sub.last_episode_count = len(detail["episodes"])

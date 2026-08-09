@@ -28,9 +28,9 @@ button{cursor:pointer;font-family:inherit;}
 .hd-inner{display:flex;align-items:center;gap:14px;max-width:1440px;margin:0 auto;padding:12px 24px;}
 .logo{font-size:19px;font-weight:900;letter-spacing:-.5px;white-space:nowrap;background:linear-gradient(120deg,#6366f1,#8b5cf6 55%,#6366f1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-decoration:none;display:inline-flex;align-items:baseline;}
 .logo-sub{-webkit-text-fill-color:var(--dim);font-size:12px;font-weight:400;margin-left:5px;filter:none;}
-.search-wrap{flex:1;max-width:560px;display:flex;align-items:center;background:var(--s2);border:1px solid var(--border);border-radius:11px;transition:border-color .2s,box-shadow .2s;}
+.search-wrap{flex:1;min-width:0;max-width:560px;display:flex;align-items:center;background:var(--s2);border:1px solid var(--border);border-radius:11px;transition:border-color .2s,box-shadow .2s;}
 .search-wrap:focus-within{border-color:rgba(99,102,241,.48);box-shadow:0 0 0 3px rgba(99,102,241,.07);}
-.search-input{flex:1;background:none;border:none;outline:none;padding:10px 16px;color:var(--fg);font-size:14px;}
+.search-input{flex:1;min-width:0;background:none;border:none;outline:none;padding:10px 16px;color:var(--fg);font-size:14px;}
 .search-input::placeholder{color:var(--dim);}
 .search-btn{background:none;border:none;border-left:1px solid var(--border);padding:9px 16px;color:var(--dim);font-size:14px;transition:color .15s;border-radius:0 11px 11px 0;}
 .search-btn:hover{color:var(--acc);}
@@ -145,6 +145,8 @@ button{cursor:pointer;font-family:inherit;}
 .player-kb-hint{display:flex;align-items:center;justify-content:center;gap:14px;padding:9px 0 2px;flex-wrap:wrap;opacity:.72;}
 .kb-chip{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--dim);}
 .kb-key{display:inline-block;background:var(--s2);border:1px solid var(--s4);border-bottom-width:2px;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;color:var(--fg2);font-family:'SFMono-Regular',Consolas,monospace;min-width:20px;text-align:center;}
+/* 触屏设备没有物理键盘，这行快捷键提示没有意义，隐藏掉省地方 */
+@media(hover:none),(pointer:coarse){.player-kb-hint{display:none;}}
 
 /* ── detail body ── */
 .dv-body{padding:22px 4px 8px;}

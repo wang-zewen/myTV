@@ -551,6 +551,14 @@ def _is_allowed_source_url(url: str) -> bool:
     norm = normalize_api_url(url)
     return any(normalize_api_url(s["url"]) == norm for s in api_sources)
 
+def _is_allowed_public_source_url(url: str) -> bool:
+    """跟 _is_allowed_source_url 一样，但额外要求这个接口没被禁用、也没设置『公开页隐藏』。"""
+    norm = normalize_api_url(url)
+    return any(
+        normalize_api_url(s["url"]) == norm and s.get("enabled", True) and s.get("public_enabled", True)
+        for s in api_sources
+    )
+
 def parse_episodes(play_from: str, play_url_raw: str) -> list:
     if not play_url_raw:
         return []
@@ -737,11 +745,7 @@ async def serve_admin():
     return "<h1>index.html not found</h1>"
 
 
-@app.get("/api/catalog")
-async def catalog(source_url: str, ac: str = "list", pg: int = 1, t: int = 0, ids: str = ""):
-    """代理采集站请求，只允许已配置接口，供公开浏览页调用"""
-    if not _is_allowed_source_url(source_url):
-        raise HTTPException(403, "该接口未在系统中配置，拒绝访问")
+async def _proxy_catalog(source_url: str, ac: str, pg: int, t: int, ids: str):
     base = normalize_api_url(source_url)
     params: dict = {"ac": ac, "pg": pg}
     if t:
@@ -761,11 +765,38 @@ async def catalog(source_url: str, ac: str = "list", pg: int = 1, t: int = 0, id
         raise HTTPException(502, str(e))
 
 
+@app.get("/api/catalog")
+async def catalog(source_url: str, ac: str = "list", pg: int = 1, t: int = 0, ids: str = ""):
+    """代理采集站请求，只允许已配置接口，供后台管理页调用（能看到所有接口，不管有没有对公开页隐藏）"""
+    if not _is_allowed_source_url(source_url):
+        raise HTTPException(403, "该接口未在系统中配置，拒绝访问")
+    return await _proxy_catalog(source_url, ac, pg, t, ids)
+
+
+@app.get("/api/public/catalog")
+async def public_catalog(source_url: str, ac: str = "list", pg: int = 1, t: int = 0, ids: str = ""):
+    """给公开主页用的代理，比 /api/catalog 多一层限制：接口被禁用或设置了『公开页隐藏』
+    时直接拒绝，不能靠猜/拿到 source_url 绕过隐藏设置。"""
+    if not _is_allowed_public_source_url(source_url):
+        raise HTTPException(403, "该接口不可用或已在公开页隐藏")
+    return await _proxy_catalog(source_url, ac, pg, t, ids)
+
+
 # ── 接口管理 ──
 
 @app.get("/api/sources")
 async def list_sources():
     return api_sources
+
+@app.get("/api/public/sources")
+async def list_public_sources():
+    """给公开主页用的接口列表，只暴露启用且未设为『公开页隐藏』的接口，
+    不走 /api/sources（那个是给后台管理用的，会把所有接口原样列出来）。"""
+    return [
+        {"name": s["name"], "url": s["url"]}
+        for s in api_sources
+        if s.get("enabled", True) and s.get("public_enabled", True)
+    ]
 
 @app.post("/api/sources")
 async def add_source(src: ApiSource):
@@ -773,7 +804,7 @@ async def add_source(src: ApiSource):
     for s in api_sources:
         if normalize_api_url(s["url"]) == normalized:
             raise HTTPException(400, "该接口已存在")
-    api_sources.append({"name": src.name.strip(), "url": normalized, "enabled": True, "tvbox_enabled": True})
+    api_sources.append({"name": src.name.strip(), "url": normalized, "enabled": True, "tvbox_enabled": True, "public_enabled": True})
     save_data()
     return {"ok": True}
 
@@ -811,6 +842,14 @@ async def tvbox_toggle_source(index: int):
     api_sources[index]["tvbox_enabled"] = not api_sources[index].get("tvbox_enabled", True)
     save_data()
     return {"tvbox_enabled": api_sources[index]["tvbox_enabled"]}
+
+@app.patch("/api/sources/{index}/public-toggle")
+async def public_toggle_source(index: int):
+    if index < 0 or index >= len(api_sources):
+        raise HTTPException(404, "不存在")
+    api_sources[index]["public_enabled"] = not api_sources[index].get("public_enabled", True)
+    save_data()
+    return {"public_enabled": api_sources[index]["public_enabled"]}
 
 @app.delete("/api/sources/{index}")
 async def delete_source(index: int):

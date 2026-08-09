@@ -764,13 +764,14 @@ function renderSources(){
     <div class="source-item" id="src-row-${i}" style="${s.enabled===false?'opacity:.5':''}">
       <div class="source-dot" style="background:${s.enabled===false?'var(--muted)':'var(--green)'}"></div>
       <div class="source-info">
-        <div class="source-name">${esc(s.name)}${s.enabled===false?'<span style="font-size:11px;color:var(--muted);font-family:\'DM Mono\',monospace;margin-left:6px">(已禁用)</span>':''}${s.tvbox_enabled===false?'<span style="font-size:11px;color:var(--muted);font-family:\'DM Mono\',monospace;margin-left:6px">(TVBox 隐藏)</span>':''}</div>
+        <div class="source-name">${esc(s.name)}${s.enabled===false?'<span style="font-size:11px;color:var(--muted);font-family:\'DM Mono\',monospace;margin-left:6px">(已禁用)</span>':''}${s.tvbox_enabled===false?'<span style="font-size:11px;color:var(--muted);font-family:\'DM Mono\',monospace;margin-left:6px">(TVBox 隐藏)</span>':''}${s.public_enabled===false?'<span style="font-size:11px;color:var(--muted);font-family:\'DM Mono\',monospace;margin-left:6px">(公开页隐藏)</span>':''}</div>
         <div class="source-url">${esc(s.url)}</div>
       </div>
       <button class="btn btn-ghost btn-sm" data-i="${i}" data-action="test" title="测试接口是否可用">测试</button>
       <button class="btn btn-ghost btn-sm" data-i="${i}" data-action="edit">编辑</button>
       <button class="btn btn-${s.enabled===false?'green':'yellow'} btn-sm" data-i="${i}" data-action="toggle">${s.enabled===false?'▶ 启用':'⏸ 禁用'}</button>
-      <button class="btn btn-${s.tvbox_enabled===false?'ghost':'ghost'} btn-sm" data-i="${i}" data-action="tvbox-toggle" title="${s.tvbox_enabled===false?'当前在 TVBox 中隐藏，点击显示':'当前在 TVBox 中可见，点击隐藏'}">📺 ${s.tvbox_enabled===false?'显示':'隐藏'}</button>
+      <button class="btn btn-ghost btn-sm" data-i="${i}" data-action="tvbox-toggle" title="${s.tvbox_enabled===false?'当前在 TVBox 中隐藏，点击显示':'当前在 TVBox 中可见，点击隐藏'}">📺 ${s.tvbox_enabled===false?'显示':'隐藏'}</button>
+      <button class="btn btn-ghost btn-sm" data-i="${i}" data-action="public-toggle" title="${s.public_enabled===false?'当前在公开页隐藏，点击显示':'当前在公开页可见，点击隐藏'}">🌐 ${s.public_enabled===false?'显示':'隐藏'}</button>
       <button class="btn btn-danger btn-sm" data-i="${i}" data-action="delete">删除</button>
     </div>`).join('');
   document.getElementById('sourcesList').onclick=async e=>{
@@ -808,6 +809,10 @@ function renderSources(){
     } else if(btn.dataset.action==='tvbox-toggle'){
       const r=await fetch(`/api/sources/${i}/tvbox-toggle`,{method:'PATCH'});
       if(r.ok){const d=await r.json();await loadSources();toast(d.tvbox_enabled?'已在 TVBox 中显示该接口':'已在 TVBox 中隐藏该接口');}
+      else toast('操作失败','error');
+    } else if(btn.dataset.action==='public-toggle'){
+      const r=await fetch(`/api/sources/${i}/public-toggle`,{method:'PATCH'});
+      if(r.ok){const d=await r.json();await loadSources();toast(d.public_enabled?'已在公开页显示该接口':'已在公开页隐藏该接口');}
       else toast('操作失败','error');
     } else if(btn.dataset.action==='delete'){
       if(!confirm('确定删除该接口？')) return;

@@ -291,7 +291,7 @@ let _currentPlayableIndex=-1;
 
 // ── init ──────────────────────────────────────────────────────
 async function init(){
-  try{const r=await fetch('/api/sources');sources=(await r.json()).filter(s=>s.enabled!==false);}catch(e){sources=[];}
+  try{const r=await fetch('/api/public/sources');sources=await r.json();}catch(e){sources=[];}
   try{const r=await fetch('/api/emby/status');embyStatus=await r.json();}catch(e){embyStatus={configured:false,need_auth:false};}
   renderSrcBar();
   await selectLocal(); // 默认打开本地库
@@ -355,7 +355,7 @@ async function fetchCatalog(srcUrl,typeId,pg,resetCats){
   const p=new URLSearchParams({source_url:srcUrl,ac:'list',pg});
   if(typeId) p.set('t',typeId);
   try{
-    const r=await fetch('/api/catalog?'+p);
+    const r=await fetch('/api/public/catalog?'+p);
     const d=await r.json();
     page=pg;
     pageCount=d.pagecount||1;
@@ -749,7 +749,7 @@ async function openDetail(idx){
   $('epTotal').textContent='';
   stopPlayer();
   try{
-    const r=await fetch('/api/catalog?'+new URLSearchParams({source_url:srcUrl,ac:'detail',ids:v.vod_id}));
+    const r=await fetch('/api/public/catalog?'+new URLSearchParams({source_url:srcUrl,ac:'detail',ids:v.vod_id}));
     const d=await r.json();
     const vod=(d.list||[])[0];
     if(!vod){$('dvMeta').textContent='获取详情失败';return;}

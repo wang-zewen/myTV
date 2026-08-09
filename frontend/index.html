@@ -1224,10 +1224,12 @@ async function loadVideos(){
       <div class="video-thumb" data-file="${esc(v.filename)}" data-name="${esc(v.name)}">▶️</div>
       <div class="video-info">
         <div class="video-name" title="${esc(v.name)}">${esc(v.name)}</div>
-        <div class="video-meta">${v.size_mb} MB · ${new Date(v.created_at).toLocaleDateString()}</div>
+        <div class="video-meta">${v.size_mb} MB · ${new Date(v.created_at).toLocaleDateString()}${v.tvbox_enabled===false?' · <span style="color:var(--muted)">TVBox 隐藏</span>':''}${v.public_enabled===false?' · <span style="color:var(--muted)">公开页隐藏</span>':''}</div>
         <div class="video-actions">
           <button class="btn btn-green btn-sm" data-file="${esc(v.filename)}" data-name="${esc(v.name)}" data-action="play">▶ 播放</button>
           <button class="btn btn-ghost btn-sm" data-file="${esc(v.filename)}" data-name="${esc(v.name)}" data-action="rename">✎ 重命名</button>
+          <button class="btn btn-ghost btn-sm" data-file="${esc(v.filename)}" data-action="tvbox-toggle" title="${v.tvbox_enabled===false?'当前在 TVBox 中隐藏，点击显示':'当前在 TVBox 中可见，点击隐藏'}">📺 ${v.tvbox_enabled===false?'显示':'隐藏'}</button>
+          <button class="btn btn-ghost btn-sm" data-file="${esc(v.filename)}" data-action="public-toggle" title="${v.public_enabled===false?'当前在公开页隐藏，点击显示':'当前在公开页可见，点击隐藏'}">🌐 ${v.public_enabled===false?'显示':'隐藏'}</button>
           <button class="btn btn-danger btn-sm" data-file="${esc(v.filename)}" data-name="${esc(v.name)}" data-action="delete">✕ 删除</button>
         </div>
       </div>
@@ -1236,20 +1238,25 @@ async function loadVideos(){
     const btn=e.target.closest('[data-action]')||e.target.closest('.video-thumb');
     if(!btn) return;
     const file=btn.dataset.file;const name=btn.dataset.name;
-    if(btn.dataset.action==='delete'||btn.dataset.action==='rename'||(!btn.dataset.action&&false)){
-      if(btn.dataset.action==='delete'){
-        if(!confirm(`确定删除「${name}」？`)) return;
-        const r=await fetch(`/api/videos/${encodeURIComponent(file)}`,{method:'DELETE'});
-        if(r.ok){toast(`已删除：${name}`);loadVideos();}else toast('删除失败','error');
-      } else if(btn.dataset.action==='rename'){
-        const newName=prompt('输入新的视频名称：', name);
-        if(newName===null) return;
-        const val=newName.trim();
-        if(!val){toast('名称不能为空','error');return;}
-        const r=await fetch(`/api/videos/${encodeURIComponent(file)}/rename`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:val})});
-        const d=await r.json().catch(()=>({}));
-        if(r.ok){toast(`已重命名为：${d.name||val}`);loadVideos();}else toast(d.detail||'重命名失败','error');
-      }
+    const action=btn.dataset.action;
+    if(action==='delete'){
+      if(!confirm(`确定删除「${name}」？`)) return;
+      const r=await fetch(`/api/videos/${encodeURIComponent(file)}`,{method:'DELETE'});
+      if(r.ok){toast(`已删除：${name}`);loadVideos();}else toast('删除失败','error');
+    } else if(action==='rename'){
+      const newName=prompt('输入新的视频名称：', name);
+      if(newName===null) return;
+      const val=newName.trim();
+      if(!val){toast('名称不能为空','error');return;}
+      const r=await fetch(`/api/videos/${encodeURIComponent(file)}/rename`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:val})});
+      const d=await r.json().catch(()=>({}));
+      if(r.ok){toast(`已重命名为：${d.name||val}`);loadVideos();}else toast(d.detail||'重命名失败','error');
+    } else if(action==='tvbox-toggle'){
+      const r=await fetch(`/api/videos/${encodeURIComponent(file)}/tvbox-toggle`,{method:'PATCH'});
+      if(r.ok){const d=await r.json();toast(d.tvbox_enabled?'已在 TVBox 中显示该视频':'已在 TVBox 中隐藏该视频');loadVideos();}else toast('操作失败','error');
+    } else if(action==='public-toggle'){
+      const r=await fetch(`/api/videos/${encodeURIComponent(file)}/public-toggle`,{method:'PATCH'});
+      if(r.ok){const d=await r.json();toast(d.public_enabled?'已在公开页显示该视频':'已在公开页隐藏该视频');loadVideos();}else toast('操作失败','error');
     } else {
       openPlayer(file,name);
     }

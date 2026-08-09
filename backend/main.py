@@ -61,6 +61,11 @@ tasks: dict = {}          # 下载任务
 api_sources: list = []    # 采集站接口
 subscriptions: dict = {}  # 订阅列表 {sub_id: Subscription}
 settings: dict = {"check_interval": 3600, "password_hash": "", "tvbox_local_enabled": True, "tvbox_emby_enabled": True, "public_local_enabled": True}  # 全局设置，password_hash 为空时不需要认证
+video_meta: dict = {}      # 本地视频单个文件的可见性 {filename: {"tvbox_enabled": bool, "public_enabled": bool}}，没有条目就是默认全部可见
+
+def _video_visibility(filename: str) -> dict:
+    m = video_meta.get(filename, {})
+    return {"tvbox_enabled": m.get("tvbox_enabled", True), "public_enabled": m.get("public_enabled", True)}
 emby_config: dict = {"url": "", "api_key": "", "user_id": "", "password_hash": ""}  # legacy fallback
 emby_servers: list = []
 _download_semaphore: Optional[asyncio.Semaphore] = None
@@ -172,6 +177,7 @@ def save_data():
         "settings": settings,
         "emby_config": emby_config,
         "emby_servers": emby_servers,
+        "video_meta": video_meta,
         "subscriptions": {
             sid: {
                 "sub_id": s.sub_id,
@@ -207,6 +213,8 @@ def load_data():
         for src in api_sources:
             src.setdefault("tvbox_enabled", True)
         settings.update(data.get("settings", {}))
+        video_meta.clear()
+        video_meta.update(data.get("video_meta", {}))
         saved_ec = data.get("emby_config", {})
         for k in emby_config:
             if k in saved_ec:
@@ -1032,16 +1040,19 @@ async def list_videos():
         videos.append({"name": f.stem, "filename": f.name,
             "size_mb": round(stat.st_size / 1024 / 1024, 2),
             "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-            "url": f"/api/stream/{f.name}"})
+            "url": f"/api/stream/{f.name}",
+            **_video_visibility(f.name)})
     return videos
 
 
 @app.get("/api/public/videos")
 async def list_public_videos():
-    """给公开主页用的本地视频列表，本地库被设为『公开页隐藏』时直接返回空列表。"""
+    """给公开主页用的本地视频列表：本地库整体被设为『公开页隐藏』时直接返回空列表，
+    否则再过滤掉单个视频被设为『公开页隐藏』的。"""
     if not settings.get("public_local_enabled", True):
         return []
-    return await list_videos()
+    all_videos = await list_videos()
+    return [v for v in all_videos if v["public_enabled"]]
 
 @app.get("/api/videos/files")
 async def list_all_files():
@@ -1067,7 +1078,31 @@ async def delete_video(filename: str):
     if not path.exists():
         raise HTTPException(404, "文件不存在")
     path.unlink()
+    video_meta.pop(filename, None)
+    save_data()
     return {"ok": True}
+
+@app.patch("/api/videos/{filename}/tvbox-toggle")
+async def tvbox_toggle_video(filename: str):
+    if "/" in filename or ".." in filename:
+        raise HTTPException(400, "非法文件名")
+    if not (VIDEO_DIR / filename).exists():
+        raise HTTPException(404, "文件不存在")
+    cur = _video_visibility(filename)
+    video_meta.setdefault(filename, {})["tvbox_enabled"] = not cur["tvbox_enabled"]
+    save_data()
+    return _video_visibility(filename)
+
+@app.patch("/api/videos/{filename}/public-toggle")
+async def public_toggle_video(filename: str):
+    if "/" in filename or ".." in filename:
+        raise HTTPException(400, "非法文件名")
+    if not (VIDEO_DIR / filename).exists():
+        raise HTTPException(404, "文件不存在")
+    cur = _video_visibility(filename)
+    video_meta.setdefault(filename, {})["public_enabled"] = not cur["public_enabled"]
+    save_data()
+    return _video_visibility(filename)
 
 class RenameVideoRequest(BaseModel):
     name: str
@@ -1091,6 +1126,9 @@ async def rename_video(filename: str, data: RenameVideoRequest):
     if new_path.exists() and new_path != path:
         raise HTTPException(400, "目标文件名已存在")
     path.rename(new_path)
+    if filename in video_meta:
+        video_meta[new_path.name] = video_meta.pop(filename)
+        save_data()
     return {"ok": True, "filename": new_path.name, "name": new_path.stem}
 
 @app.post("/api/videos/merge")
@@ -1333,6 +1371,63 @@ def _get_video_files():
         return []
     return [f for f in sorted(VIDEO_DIR.iterdir(), key=lambda x: x.stat().st_ctime, reverse=True)
             if f.suffix.lower() in [".mp4", ".mkv", ".ts", ".m4v"]]
+
+
+@app.get("/tvbox")
+async def tvbox_local(request: Request):
+    """本地视频库的 TVBox CMS-JSON 接口。/tvbox/source 里本地库那条 site 的 api 地址就是这里，
+    之前这个路由一直没实现，本地库在 TVBox 里其实是打不开的（现在顺手一起修了）。
+    单个视频被设为 tvbox 隐藏的不会出现在这里。"""
+    base_url = str(request.base_url).rstrip("/")
+    ac = request.query_params.get("ac", "list")
+    files = [f for f in _get_video_files() if _video_visibility(f.name)["tvbox_enabled"]]
+
+    if ac == "detail":
+        ids = [i for i in request.query_params.get("ids", "").split(",") if i]
+        wanted = set(ids)
+        vod_list = []
+        for f in files:
+            if wanted and f.name not in wanted:
+                continue
+            try:
+                stat = f.stat()
+            except OSError:
+                continue
+            vod_list.append({
+                "vod_id": f.name,
+                "vod_name": f.stem,
+                "type_id": 1,
+                "type_name": "本地视频",
+                "vod_pic": "",
+                "vod_remarks": f"{round(stat.st_size / 1024 / 1024, 1)} MB",
+                "vod_time": datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S"),
+                "vod_play_from": "本地视频库",
+                "vod_play_url": f"播放${base_url}/api/stream/{f.name}",
+            })
+        return JSONResponse({"code": 1, "msg": "数据列表", "page": 1, "pagecount": 1,
+                              "limit": len(vod_list), "total": len(vod_list), "list": vod_list, "class": []})
+
+    pg = max(1, int(request.query_params.get("pg", "1") or 1))
+    limit = 40
+    total = len(files)
+    pagecount = max(1, (total + limit - 1) // limit)
+    vod_list = []
+    for f in files[(pg - 1) * limit: pg * limit]:
+        try:
+            stat = f.stat()
+        except OSError:
+            continue
+        vod_list.append({
+            "vod_id": f.name,
+            "vod_name": f.stem,
+            "type_id": 1,
+            "type_name": "本地视频",
+            "vod_pic": "",
+            "vod_remarks": f"{round(stat.st_size / 1024 / 1024, 1)} MB",
+            "vod_time": "",
+        })
+    return JSONResponse({"code": 1, "msg": "数据列表", "page": pg, "pagecount": pagecount,
+                          "limit": limit, "total": total, "list": vod_list, "class": []})
 
 
 @app.get("/tvbox/source/{source_index}")

@@ -392,6 +392,7 @@ input::placeholder{color:var(--muted);}
         <button class="btn btn-ghost btn-sm" id="browseMoreBtn" style="display:none">加载更多</button>
       </div>
     </div>
+    <div id="searchSrcTabs" class="browse-tabs" style="display:none"></div>
     <div id="searchResults"></div>
   </div>
 
@@ -833,21 +834,48 @@ document.getElementById('addSourceBtn').addEventListener('click',async()=>{
 });
 
 // ── 搜索 ──────────────────────────────────────────────
+let _searchAllResults=[],_searchErrors=[],_searchKw='',_searchSrcFilter='';
 async function doSearch(){
   const kw=document.getElementById('searchInput').value.trim();
   if(!kw){toast('请输入搜索关键词','error');return;}
   if(!sources.filter(s=>s.enabled!==false).length){toast('请先在「接口管理」添加并启用采集站','error');nav('sources');return;}
   const btn=document.getElementById('searchBtn');
   btn.disabled=true;btn.textContent='搜索中...';
+  document.getElementById('searchSrcTabs').style.display='none';
   document.getElementById('searchResults').innerHTML='<div class="empty"><div class="empty-icon">⏳</div><p>正在搜索...</p></div>';
   try{
     const r=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:kw})});
-    const data=await r.json();renderSearchResults(data.results,kw,data.errors||[]);
+    const data=await r.json();
+    _searchAllResults=data.results||[];_searchErrors=data.errors||[];_searchKw=kw;_searchSrcFilter='';
+    renderSearchSrcTabs();
+    renderSearchResults(_searchAllResults,_searchKw,_searchErrors);
   }catch(e){toast('搜索失败','error');document.getElementById('searchResults').innerHTML='';}
   finally{btn.disabled=false;btn.innerHTML='🔍 搜索';}
 }
 document.getElementById('searchBtn').addEventListener('click',doSearch);
 document.getElementById('searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
+
+// 搜索结果是所有采集站合并到一起的，这里按来源分一排筛选 tab，方便只看某一个源的结果
+function renderSearchSrcTabs(){
+  const wrap=document.getElementById('searchSrcTabs');
+  const counts=new Map();
+  for(const r of _searchAllResults){
+    const key=r.source_name||'未知来源';
+    counts.set(key,(counts.get(key)||0)+1);
+  }
+  if(counts.size<=1){wrap.style.display='none';wrap.innerHTML='';return;}
+  wrap.style.display='flex';
+  wrap.innerHTML=`<button class="browse-tab ${_searchSrcFilter===''?'active':''}" data-src-name="">全部 (${_searchAllResults.length})</button>`+
+    [...counts.entries()].map(([name,n])=>`<button class="browse-tab ${_searchSrcFilter===name?'active':''}" data-src-name="${esc(name)}">${esc(name)} (${n})</button>`).join('');
+}
+document.getElementById('searchSrcTabs').addEventListener('click',e=>{
+  const btn=e.target.closest('[data-src-name]');
+  if(!btn)return;
+  _searchSrcFilter=btn.dataset.srcName;
+  renderSearchSrcTabs();
+  const filtered=_searchSrcFilter?_searchAllResults.filter(r=>(r.source_name||'未知来源')===_searchSrcFilter):_searchAllResults;
+  renderSearchResults(filtered,_searchKw,_searchErrors);
+});
 
 function renderSearchResults(results,kw,errors=[]){
   const el=document.getElementById('searchResults');
@@ -974,6 +1002,7 @@ function parseEpsFromRaw(playFrom,playUrl){
 }
 async function openBrowseDetail(vodId,vodName){
   const results=document.getElementById('searchResults');
+  document.getElementById('searchSrcTabs').style.display='none'; // 浏览分类点进来的单条详情，不是搜索结果，不显示按源筛选
   results.innerHTML='<div class="empty" style="padding:30px 0"><div class="empty-icon">⏳</div><p>加载详情中...</p></div>';
   results.scrollIntoView({behavior:'smooth',block:'start'});
   try{

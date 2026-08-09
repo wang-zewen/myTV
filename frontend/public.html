@@ -549,6 +549,7 @@ function _setCurrentPlayable(payload,index=-1){
 function playCurrentVideo(){
   if(!_currentPlayable) return;
   if(_currentPlayable.kind==='emby-movie') embyDirectPlay(_currentPlayable.id, undefined, _currentPlayable.serverId);
+  else if(_currentPlayable.kind==='emby-episode') embyDirectPlay(_currentPlayable.id, _currentPlayable.epIdx, _currentPlayable.serverId);
   else if(_currentPlayable.kind==='local') startPlay($('player'), _currentPlayable.url);
   else if(_currentPlayable.kind==='cms-episode') playEp(_currentPlayable.index);
 }
@@ -598,11 +599,16 @@ async function openEmbyDetail(v){
       $('epTotal').textContent=eps.length?eps.length+'集':'';
       if(!eps.length){$('epGrid').innerHTML='<span style="color:var(--dim);font-size:12px">暂无剧集</span>';return;}
       $('epGrid').innerHTML=eps.map((ep,i)=>`<button class="ep" id="embyEp${i}" onclick="embyDirectPlay('${ep.id}',${i},'${serverId}')">S${ep.season}E${ep.episode} ${esc(ep.name)}</button>`).join('');
+      // 跟本地视频库/采集站一样，切进来直接自动播第一集，不用户再点一次播放
+      _setCurrentPlayable({kind:'emby-episode',id:eps[0].id,epIdx:0,serverId}, vodArr.findIndex(x=>x && x.id===v.id));
+      embyDirectPlay(eps[0].id, 0, serverId);
     }catch(e){$('epGrid').innerHTML='<span style="color:#f87171;font-size:12px">加载失败</span>';}
   } else {
     $('embyActions').style.display='block';
     _setCurrentPlayable({kind:'emby-movie',id:v.id,serverId}, vodArr.findIndex(x=>x && x.id===v.id));
     $('embyDirectBtn').onclick=()=>embyDirectPlay(v.id, undefined, serverId);
+    // 同上：直接自动播放，不用再多点一次
+    embyDirectPlay(v.id, undefined, serverId);
   }
 }
 

@@ -824,7 +824,7 @@ function startPlay(video,url){
   showPlayerLoading('正在加载播放...');
   const isM3u8=/\.m3u8/i.test(url);
   if(isM3u8&&typeof Hls!=='undefined'&&Hls.isSupported()){
-    let mediaErrCount=0;
+    let lastMediaErrTime=-Infinity,swappedAudioCodec=false;
     hlsInst=new Hls({enableWorker:true,maxBufferLength:30});
     hlsInst.loadSource(url);
     hlsInst.attachMedia(video);
@@ -834,13 +834,27 @@ function startPlay(video,url){
       if(d.type===Hls.ErrorTypes.NETWORK_ERROR){
         showPlayerLoading('网络波动，正在重连...');
         hlsInst.startLoad();
-      }else if(d.type===Hls.ErrorTypes.MEDIA_ERROR&&mediaErrCount<2){
-        mediaErrCount++;
-        showPlayerLoading('正在恢复播放...');
-        hlsInst.recoverMediaError();
+      }else if(d.type===Hls.ErrorTypes.MEDIA_ERROR){
+        // 照 hls.js 官方推荐的恢复流程来，不能只无脑调 recoverMediaError：
+        // 短时间内反复出 MEDIA_ERROR 往往是音频编解码器不匹配，只重建缓冲区不换
+        // 编解码器的话，恢复后声音会变得混乱失真，得靠 swapAudioCodec 才能真正修好，
+        // 这也是"播放中偶尔声音变乱、刷新页面才恢复"这个问题的根因。
+        const now=performance.now();
+        if(now-lastMediaErrTime>3000){
+          lastMediaErrTime=now;
+          showPlayerLoading('正在恢复播放...');
+          hlsInst.recoverMediaError();
+        }else if(!swappedAudioCodec){
+          lastMediaErrTime=now;
+          swappedAudioCodec=true;
+          showPlayerLoading('正在修复音轨...');
+          hlsInst.swapAudioCodec();
+          hlsInst.recoverMediaError();
+        }else{
+          showPlayerError('媒体解码失败，格式不兼容');
+        }
       }else{
-        const msg=d.type===Hls.ErrorTypes.NETWORK_ERROR?'网络错误，源不可用':'媒体解码失败，格式不兼容';
-        showPlayerError(msg);
+        showPlayerError('网络错误，源不可用');
       }
     });
   }else if(isM3u8&&video.canPlayType('application/vnd.apple.mpegurl')){

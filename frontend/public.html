@@ -696,6 +696,13 @@ async function gotoEmbyPersonPage(pg){
 // ── search ─────────────────────────────────────────────────────
 $('q').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
 
+let _searchAllResults=[],_searchSrcFilter='';
+$('catBar').addEventListener('click',e=>{
+  const btn=e.target.closest('[data-src-name]');
+  if(!btn||!isSearch)return;
+  selectSearchSrc(btn.dataset.srcName);
+});
+
 async function doSearch(){
   const kw=$('q').value.trim();
   if(!kw){if(isSearch)init();return;}
@@ -707,11 +714,39 @@ async function doSearch(){
   try{
     const r=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:kw})});
     const d=await r.json();
-    vodArr=d.results||[];
-    $('secHd').innerHTML=`<div class="search-info">搜索 <strong>"${esc(kw)}"</strong> · 找到 ${vodArr.length} 个结果</div>`;
-    if(!vodArr.length){$('grid').innerHTML=emptyHtml('🔍','没有找到相关内容','试试其他关键词');return;}
-    renderGrid(vodArr,true,true);
+    _searchAllResults=d.results||[];
+    _searchSrcFilter='';
+    renderSearchSrcBar();
+    applySearchFilter();
   }catch(e){setGrid(emptyHtml('⚠️','搜索失败',''));}
+}
+
+// 搜索结果是把所有采集站合并到一起返回的，这里按来源分出一排筛选 tab（复用分类栏那套 UI），
+// 方便只看某一个源的结果，不用在一大坨混合结果里翻找
+function renderSearchSrcBar(){
+  const counts=new Map();
+  for(const r of _searchAllResults){
+    const key=r.source_name||'未知来源';
+    counts.set(key,(counts.get(key)||0)+1);
+  }
+  if(counts.size<=1){$('catOuter').style.display='none';$('catBar').innerHTML='';return;}
+  $('catOuter').style.display='block';
+  $('catBar').innerHTML=`<button class="ctab ${_searchSrcFilter===''?'on':''}" data-src-name="">全部 (${_searchAllResults.length})</button>`+
+    [...counts.entries()].map(([name,n])=>`<button class="ctab ${_searchSrcFilter===name?'on':''}" data-src-name="${esc(name)}">${esc(name)} (${n})</button>`).join('');
+}
+function selectSearchSrc(name){
+  _searchSrcFilter=name;
+  renderSearchSrcBar();
+  applySearchFilter();
+  window.scrollTo({top:0,behavior:'auto'});
+}
+function applySearchFilter(){
+  vodArr=_searchSrcFilter?_searchAllResults.filter(r=>(r.source_name||'未知来源')===_searchSrcFilter):_searchAllResults;
+  const kw=esc($('q').value.trim());
+  const filterNote=_searchSrcFilter?`，当前显示「${esc(_searchSrcFilter)}」${vodArr.length} 个`:'';
+  $('secHd').innerHTML=`<div class="search-info">搜索 <strong>"${kw}"</strong> · 找到 ${_searchAllResults.length} 个结果${filterNote}</div>`;
+  if(!vodArr.length){$('grid').innerHTML=emptyHtml('🔍','没有找到相关内容','试试其他关键词');return;}
+  renderGrid(vodArr,true,true);
 }
 
 // ── detail & player ────────────────────────────────────────────

@@ -60,7 +60,7 @@ MAX_CONCURRENT_DOWNLOADS = 3  # 最大并发下载数
 tasks: dict = {}          # 下载任务
 api_sources: list = []    # 采集站接口
 subscriptions: dict = {}  # 订阅列表 {sub_id: Subscription}
-settings: dict = {"check_interval": 3600, "password_hash": "", "tvbox_local_enabled": True, "tvbox_emby_enabled": True}  # 全局设置，password_hash 为空时不需要认证
+settings: dict = {"check_interval": 3600, "password_hash": "", "tvbox_local_enabled": True, "tvbox_emby_enabled": True, "public_local_enabled": True}  # 全局设置，password_hash 为空时不需要认证
 emby_config: dict = {"url": "", "api_key": "", "user_id": "", "password_hash": ""}  # legacy fallback
 emby_servers: list = []
 _download_semaphore: Optional[asyncio.Semaphore] = None
@@ -1035,6 +1035,14 @@ async def list_videos():
             "url": f"/api/stream/{f.name}"})
     return videos
 
+
+@app.get("/api/public/videos")
+async def list_public_videos():
+    """给公开主页用的本地视频列表，本地库被设为『公开页隐藏』时直接返回空列表。"""
+    if not settings.get("public_local_enabled", True):
+        return []
+    return await list_videos()
+
 @app.get("/api/videos/files")
 async def list_all_files():
     files = []
@@ -1301,6 +1309,22 @@ async def update_tvbox_settings(body: TvboxSettings):
         "local_enabled": settings["tvbox_local_enabled"],
         "emby_enabled": settings["tvbox_emby_enabled"],
     }
+
+# ── 公开页曝光设置（跟 TVBox 那套是分开的两回事，各控各的）──
+
+class PublicExposureSettings(BaseModel):
+    local_enabled: Optional[bool] = None
+
+@app.get("/api/public/settings")
+async def get_public_exposure_settings():
+    return {"local_enabled": settings.get("public_local_enabled", True)}
+
+@app.patch("/api/public/settings")
+async def update_public_exposure_settings(body: PublicExposureSettings):
+    if body.local_enabled is not None:
+        settings["public_local_enabled"] = body.local_enabled
+    save_data()
+    return {"local_enabled": settings["public_local_enabled"]}
 
 # ── TVBox 订阅接口 ──
 

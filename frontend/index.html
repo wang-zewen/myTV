@@ -471,10 +471,11 @@ input::placeholder{color:var(--muted);}
     </div>
     <div class="tvbox-card">
       <div class="slabel">内容曝光设置</div>
-      <p style="font-size:13px;color:var(--muted);margin-bottom:12px">控制哪些内容出现在 TVBox 订阅中。采集站接口的单独开关在「接口管理」页面。</p>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:12px">控制哪些内容出现在 TVBox 订阅 / 公开首页中。采集站接口的单独开关在「接口管理」页面。</p>
       <div style="display:flex;flex-direction:column;gap:10px">
         <div style="display:flex;align-items:center;gap:12px">
           <button id="tvboxLocalToggleBtn" class="btn btn-sm btn-ghost" onclick="toggleTvboxExposure('local')">...</button>
+          <button id="publicLocalToggleBtn" class="btn btn-sm btn-ghost" onclick="togglePublicLocalExposure()">...</button>
           <div>
             <span style="font-size:13px;font-weight:500">📼 本地视频库</span>
             <span style="font-size:12px;color:var(--muted);margin-left:8px">已下载到服务器的视频</span>
@@ -1633,23 +1634,40 @@ document.getElementById('loadEmbyLibrariesBtn').addEventListener('click',async()
 
 // ── TVBox ──────────────────────────────────────────────
 let _tvboxSettings={local_enabled:true,emby_enabled:true};
+let _publicExposureSettings={local_enabled:true};
 async function initTvboxPage(){
   document.getElementById('tvboxUrl').textContent=`${location.origin}/tvbox/source`;
   try{
     const r=await fetch('/api/tvbox/settings');
     if(r.ok){_tvboxSettings=await r.json();_renderTvboxExposure();}
   }catch(e){}
+  try{
+    const r=await fetch('/api/public/settings');
+    if(r.ok){_publicExposureSettings=await r.json();_renderPublicExposure();}
+  }catch(e){}
 }
 function _renderTvboxExposure(){
   const lb=document.getElementById('tvboxLocalToggleBtn');
   const eb=document.getElementById('tvboxEmbyToggleBtn');
-  if(lb){lb.textContent=_tvboxSettings.local_enabled?'✓ 已显示':'✗ 已隐藏';lb.style.color=_tvboxSettings.local_enabled?'var(--green)':'var(--muted)';}
+  if(lb){lb.textContent=_tvboxSettings.local_enabled?'📺 已显示':'📺 已隐藏';lb.style.color=_tvboxSettings.local_enabled?'var(--green)':'var(--muted)';}
   if(eb){eb.textContent=_tvboxSettings.emby_enabled?'✓ 已显示':'✗ 已隐藏';eb.style.color=_tvboxSettings.emby_enabled?'var(--green)':'var(--muted)';}
 }
 async function toggleTvboxExposure(type){
   const body=type==='local'?{local_enabled:!_tvboxSettings.local_enabled}:{emby_enabled:!_tvboxSettings.emby_enabled};
   const r=await fetch('/api/tvbox/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(r.ok){_tvboxSettings=await r.json();_renderTvboxExposure();toast(type==='local'?(_tvboxSettings.local_enabled?'本地视频库已显示于 TVBox':'本地视频库已从 TVBox 隐藏'):(_tvboxSettings.emby_enabled?'Emby 媒体库已显示于 TVBox':'Emby 媒体库已从 TVBox 隐藏'));}
+  else toast('操作失败','error');
+}
+function _renderPublicExposure(){
+  const btn=document.getElementById('publicLocalToggleBtn');
+  if(!btn)return;
+  btn.textContent=_publicExposureSettings.local_enabled?'🌐 已显示':'🌐 已隐藏';
+  btn.style.color=_publicExposureSettings.local_enabled?'var(--green)':'var(--muted)';
+}
+async function togglePublicLocalExposure(){
+  const body={local_enabled:!_publicExposureSettings.local_enabled};
+  const r=await fetch('/api/public/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.ok){_publicExposureSettings=await r.json();_renderPublicExposure();toast(_publicExposureSettings.local_enabled?'本地视频库已显示于公开首页':'本地视频库已从公开首页隐藏');}
   else toast('操作失败','error');
 }
 function copyTvboxUrl(){navigator.clipboard.writeText(document.getElementById('tvboxUrl').textContent);toast('订阅地址已复制');}

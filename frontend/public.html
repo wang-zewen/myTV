@@ -288,18 +288,24 @@ let _embyCurPeople=[];
 let _browseScrollY=0;
 let _currentPlayable=null;
 let _currentPlayableIndex=-1;
+let _publicLocalEnabled=true;
 
 // ── init ──────────────────────────────────────────────────────
 async function init(){
   try{const r=await fetch('/api/public/sources');sources=await r.json();}catch(e){sources=[];}
   try{const r=await fetch('/api/emby/status');embyStatus=await r.json();}catch(e){embyStatus={configured:false,need_auth:false};}
+  try{const r=await fetch('/api/public/settings');_publicLocalEnabled=(await r.json()).local_enabled!==false;}catch(e){_publicLocalEnabled=true;}
   renderSrcBar();
-  await selectLocal(); // 默认打开本地库
+  // 本地视频库在公开页被隐藏的话，默认打开第一个能用的源，而不是硬打开本地库
+  if(_publicLocalEnabled) await selectLocal();
+  else if(sources.length) await selectSrc(0);
+  else if((embyStatus.servers||[]).some(s=>s.configured&&s.enabled!==false)) await selectEmby((embyStatus.servers||[]).find(s=>s.configured&&s.enabled!==false).id);
+  else setGrid(emptyHtml('📭','暂无可浏览的内容',''));
 }
 
 // ── source bar ─────────────────────────────────────────────────
 function renderSrcBar(){
-  const localBtn=`<button class="stab${curSrc===LOCAL?' on':''}" onclick="selectLocal()"><span>📼</span>本地视频库</button>`;
+  const localBtn=_publicLocalEnabled?`<button class="stab${curSrc===LOCAL?' on':''}" onclick="selectLocal()"><span>📼</span>本地视频库</button>`:'';
   const srcBtns=sources.map((s,i)=>`<button class="stab${curSrc===s.url?' on':''}" onclick="selectSrc(${i})"><span class="dot"></span>${esc(s.name)}</button>`).join('');
   const embyBtns=(embyStatus.servers||[]).filter(s=>s.configured&&s.enabled!==false).map(s=>`<button class="stab${curSrc===EMBY_PREFIX+s.id?' on':''}" onclick="selectEmby('${s.id}')"><span>🖥</span>${esc(s.name||'Emby')}</button>`).join('');
   $('srcBar').innerHTML=localBtn+srcBtns+embyBtns;
@@ -315,7 +321,7 @@ async function selectLocal(){
   setGrid(skelHtml(8));
   $('secHd').innerHTML='';
   try{
-    const r=await fetch('/api/videos');
+    const r=await fetch('/api/public/videos');
     const list=await r.json();
     vodArr=list.map(v=>({...v,__local:true}));
     if(!vodArr.length){setGrid(emptyHtml('📭','本地视频库为空','在管理界面下载视频后将在此显示'));return;}

@@ -804,6 +804,10 @@ function _bindPlayerReady(video){
   video.addEventListener('ended',()=>{ if(_currentPlayable) updateCenterPlayOverlay(true); });
   video.addEventListener('waiting',()=>showPlayerLoading('缓冲中...'));
   video.addEventListener('stalled',()=>showPlayerLoading('网络较慢，正在重试...'));
+  // stalled 不可靠：浏览器有时候在数据已经够用、播放完全没中断的情况下也会触发它，
+  // 而且这种情况不一定会再触发 playing/canplay 去把提示收掉，导致画面明明在正常播放，
+  // 提示却卡在上面转个不停。timeupdate 只要在真实推进就说明播放没问题，用它来兜底关掉提示。
+  video.addEventListener('timeupdate',hidePlayerLoading);
   video.addEventListener('error',()=>showPlayerError('视频播放失败，链接可能已失效或格式不兼容'));
 }
 function startPlay(video,url){

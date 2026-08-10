@@ -1172,7 +1172,7 @@ async def merge_video_audio(data: MergeMediaRequest):
         raise HTTPException(500, "合并超时")
 
 
-@app.get("/api/stream/{filename}")
+@app.api_route("/api/stream/{filename}", methods=["GET", "HEAD"])
 async def stream_video(filename: str):
     if "/" in filename or ".." in filename:
         raise HTTPException(400, "非法文件名")

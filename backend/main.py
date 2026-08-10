@@ -336,6 +336,45 @@ def _find_output_file(output_name: str, media_type: str = "video"):
 
 
 
+async def _ensure_faststart(path: Path, task: Optional["TaskStatus"] = None) -> Path:
+    """确保 .mp4/.m4v 输出是网页能流式播放的格式。
+
+    有些情况下下载工具（比如拿不到 ffmpeg 做正确封装的 N_m3u8DL-RE）会把原始
+    TS 数据直接存成 .mp4 文件——文件本身没坏，本地播放器（VLC 等能整个文件随意
+    跳转读取）照样能播，但浏览器 <video> 标签是按顺序流式读取的，遇到不是
+    真正 MP4 封装的数据会直接报 DEMUXER_ERROR 播不出来。即使是正常封装的 MP4，
+    索引块（moov）也可能被放在文件末尾而不是开头，同样会导致流式播放失败。
+
+    这里统一用 ffmpeg 无损重新封装一遍（-c copy 只换容器不重新编码，很快），
+    并加上 +faststart 把索引挪到开头。ffmpeg 输入端是按内容嗅探格式的，不看
+    扩展名，所以就算原始文件其实是裸 TS 流也能正确处理。失败就保留原文件，
+    不影响原有流程。
+    """
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg or path.suffix.lower() not in {".mp4", ".m4v"}:
+        return path
+    tmp_out = path.with_name(path.name + ".faststart.tmp")
+    try:
+        # 临时文件名不是标准扩展名，ffmpeg 猜不出输出封装格式，必须用 -f mp4 明确指定，
+        # 否则会报 "Unable to choose an output format" 直接失败
+        proc = await asyncio.create_subprocess_exec(
+            ffmpeg, "-y", "-i", str(path), "-c", "copy", "-movflags", "+faststart", "-f", "mp4", str(tmp_out),
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        )
+        rc = await asyncio.wait_for(proc.wait(), timeout=300)
+        if rc == 0 and tmp_out.exists() and tmp_out.stat().st_size >= MIN_FILE_SIZE:
+            tmp_out.replace(path)
+            if task:
+                task.log_lines.append("[优化] 已重新封装为可流式播放的 MP4")
+        else:
+            tmp_out.unlink(missing_ok=True)
+    except Exception as e:
+        if task:
+            task.log_lines.append(f"[优化] 重新封装跳过：{e}")
+        tmp_out.unlink(missing_ok=True)
+    return path
+
+
 def _verify_file(path: Path) -> tuple:
     """
     校验文件完整性。
@@ -526,7 +565,10 @@ async def _run_download_core(task_id: str, url: str, output_name: str, media_typ
                     task.error = f"文件校验失败：{reason}"
                 continue
 
-            # 校验通过，清理临时目录
+            # 校验通过，重新封装成可流式播放的格式（修不了就用原文件，不影响下载结果）
+            out_file = await _ensure_faststart(out_file, task)
+
+            # 清理临时目录
             task.log_lines.append(f"[完成] 文件校验通过：{out_file.name}（{round(out_file.stat().st_size/1024/1024, 1)} MB）")
             tmp_path_cleanup = TMP_DIR / output_name
             if tmp_path_cleanup.exists():

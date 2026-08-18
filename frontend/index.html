@@ -293,6 +293,8 @@ input::placeholder{color:var(--muted);}
     </div>
     <div style="position:relative;">
       <video id="player" controls></video>
+      <iframe id="playerFrame" allowfullscreen style="width:100%;height:65vh;border:0;display:none;background:#000;"></iframe>
+      <a id="playerFrameOpenLink" href="#" target="_blank" rel="noopener" style="display:none;position:absolute;top:8px;right:8px;z-index:3;background:rgba(0,0,0,.55);color:#e2e8f0;font-size:12px;padding:5px 10px;border-radius:8px;text-decoration:none;">↗ 新标签页打开</a>
       <div id="playerLoading" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:rgba(255,255,255,.72);color:var(--fg2);font-size:13px;z-index:2;">
         <div style="width:28px;height:28px;border:3px solid rgba(255,255,255,.18);border-top-color:var(--accent2);border-radius:50%;animation:spin 1s linear infinite;"></div>
         <span id="playerLoadingText">正在加载播放...</span>
@@ -1324,6 +1326,28 @@ function _bindAdminPlayer(video){
   video.addEventListener('stalled',()=>_showPlayerLoading('网络较慢，正在重试...'));
   video.addEventListener('error',()=>_showInlinePlayerError('视频播放失败，链接可能已失效或格式不兼容'));
 }
+function _isDirectMediaUrl(url){
+  return /\.(m3u8|mp4|mkv|ts|m4v|flv|webm|m2ts|mov|avi)(\?|#|$)/i.test(url);
+}
+function _showIframePlayer(url){
+  // 有些采集站的播放地址其实是个网页（靠它自己的 JS 去请求真正的视频流），
+  // <video> 标签直接拿这个地址请求只会拿到 HTML，必定播放失败，干脆把网页原样嵌进来。
+  _hidePlayerLoading();
+  document.getElementById('player').style.display='none';
+  const f=document.getElementById('playerFrame');
+  f.src=url;
+  f.style.display='block';
+  const link=document.getElementById('playerFrameOpenLink');
+  link.href=url;
+  link.style.display='inline-block';
+}
+function _hideIframePlayer(){
+  const f=document.getElementById('playerFrame');
+  if(f.style.display!=='none')f.src='about:blank';
+  f.style.display='none';
+  document.getElementById('playerFrameOpenLink').style.display='none';
+  document.getElementById('player').style.display='';
+}
 function _loadVideo(url,name,isM3u8){
   const video=document.getElementById('player');
   _bindAdminPlayer(video);
@@ -1332,8 +1356,13 @@ function _loadVideo(url,name,isM3u8){
   document.getElementById('modalDownloadBtn').style.display=isM3u8?'inline-flex':'none';
   document.getElementById('playerInlineError').style.display='none';
   document.getElementById('playerModal').classList.add('active');
-  _showPlayerLoading('正在加载播放...');
+  _hideIframePlayer();
   if(_hls){_hls.destroy();_hls=null;}
+  if(isM3u8&&!_isDirectMediaUrl(url)){
+    _showIframePlayer(url);
+    return;
+  }
+  _showPlayerLoading('正在加载播放...');
   if(isM3u8&&typeof Hls!=='undefined'&&Hls.isSupported()){
     let _mediaErrCount=0;
     _hls=new Hls({enableWorker:true,maxBufferLength:30});
@@ -1364,6 +1393,7 @@ function closePlayer(){
   document.getElementById('playerModal').classList.remove('active');
   document.getElementById('playerInlineError').style.display='none';
   _hidePlayerLoading();
+  _hideIframePlayer();
   const v=document.getElementById('player');v.pause();
   if(_hls){_hls.destroy();_hls=null;}v.src='';v.load();
 }

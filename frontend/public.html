@@ -232,6 +232,8 @@ button{cursor:pointer;font-family:inherit;}
     <div class="player-section">
       <div class="player-box">
         <video id="player" controls playsinline></video>
+        <iframe id="playerFrame" allowfullscreen style="position:absolute;inset:0;width:100%;height:100%;border:0;display:none;background:#000;"></iframe>
+        <a id="playerFrameOpenLink" href="#" target="_blank" rel="noopener" style="display:none;position:absolute;top:8px;right:8px;z-index:3;background:rgba(0,0,0,.55);color:#e2e8f0;font-size:12px;padding:5px 10px;border-radius:8px;text-decoration:none;">↗ 新标签页打开</a>
         <button id="centerPlayBtn" class="center-play-btn hidden" onclick="playCurrentVideo()">▶</button>
         <div id="playerLoading" class="player-loading-overlay" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;font-size:13px;z-index:2;">
           <div style="width:28px;height:28px;border:3px solid rgba(255,255,255,.12);border-top-color:#818cf8;border-radius:50%;animation:spin 1s linear infinite;"></div>
@@ -857,13 +859,41 @@ function _bindPlayerReady(video){
   video.addEventListener('timeupdate',hidePlayerLoading);
   video.addEventListener('error',()=>showPlayerError('视频播放失败，链接可能已失效或格式不兼容'));
 }
+function _isDirectMediaUrl(url){
+  return /\.(m3u8|mp4|mkv|ts|m4v|flv|webm|m2ts|mov|avi)(\?|#|$)/i.test(url);
+}
+function showIframePlayer(url){
+  // 有些采集站的播放地址其实是个网页（页面加载后由它自己的 JS 去请求真正的
+  // 视频流），<video> 标签直接拿这个地址请求到的只是 HTML，必定播放失败。
+  // 这种情况下干脆把这个网页原样嵌进来，跟用户自己在新标签页打开是同一个效果。
+  hidePlayerLoading();
+  $('playerErr').style.display='none';
+  $('player').style.display='none';
+  const f=$('playerFrame');
+  f.src=url;
+  f.style.display='block';
+  const link=$('playerFrameOpenLink');
+  link.href=url;
+  link.style.display='inline-block';
+}
+function hideIframePlayer(){
+  const f=$('playerFrame');
+  if(f.style.display!=='none')f.src='about:blank';
+  f.style.display='none';
+  $('playerFrameOpenLink').style.display='none';
+  $('player').style.display='';
+}
 function startPlay(video,url){
   stopPlayer();
   _bindPlayerReady(video);
   $('playerErr').style.display='none';
   updateCenterPlayOverlay(false);
-  showPlayerLoading('正在加载播放...');
   const isM3u8=/\.m3u8/i.test(url);
+  if(!isM3u8&&!_isDirectMediaUrl(url)){
+    showIframePlayer(url);
+    return;
+  }
+  showPlayerLoading('正在加载播放...');
   if(isM3u8&&typeof Hls!=='undefined'&&Hls.isSupported()){
     let lastMediaErrTime=-Infinity,swappedAudioCodec=false;
     hlsInst=new Hls({enableWorker:true,maxBufferLength:30});
@@ -911,6 +941,7 @@ function stopPlayer(){
   if(hlsInst){hlsInst.destroy();hlsInst=null;}
   hidePlayerLoading();
   $('playerErr').style.display='none';
+  hideIframePlayer();
   const v=$('player');v.pause();v.removeAttribute('src');v.load();
   updateCenterPlayOverlay(!!_currentPlayable);
 }

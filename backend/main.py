@@ -375,6 +375,129 @@ async def _ensure_faststart(path: Path, task: Optional["TaskStatus"] = None) -> 
     return path
 
 
+# ─── 无头浏览器解析非直链播放页 ────────────────────────────
+# 有些采集站的播放地址其实是个网页（真正的 m3u8/mp4 是页面加载后由它自己的
+# JS 请求出来的，有时还带 token/加密），普通 HTTP 客户端/yt-dlp/N_m3u8DL-RE
+# 拿不到，只能靠真实浏览器内核把页面跑一遍再嗅探网络请求。这是尽力而为的
+# 通用兜底（不针对具体网站写规则），覆盖不了的站直接超时返回 None，调用方
+# 按老逻辑处理，不影响其他下载/播放功能。
+#
+# 这个功能是可选的：没装 playwright，或者装了但缺 headless chromium 依赖的
+# 系统共享库（这部分安装需要 root，跟本项目"无需 root"的安装理念有冲突，
+# 没写进默认安装流程），第一次尝试时会直接失败并记日志，之后自动跳过。
+_DIRECT_MEDIA_EXT_RE = re.compile(r"\.(m3u8|mpd|mp4|mkv|ts|m4v|flv|webm|m2ts|mov|avi)(\?|#|$)", re.IGNORECASE)
+_STRICT_MEDIA_URL_RE = re.compile(r"\.(m3u8|mpd)(\?|#|$)", re.IGNORECASE)
+_LOOSE_MEDIA_URL_RE = re.compile(r"\.(mp4|flv|m4v|mov)(\?|#|$)", re.IGNORECASE)
+
+_BROWSER_RESOLVE_SEMAPHORE: Optional[asyncio.Semaphore] = None   # 限制并发解析数，保护配置不高的 VPS
+_browser_resolve_unavailable = False   # 首次失败（缺依赖等）后置 True，避免每次都重试浪费时间
+_playwright_ctx = None
+_browser_instance = None
+_browser_lock: Optional[asyncio.Lock] = None
+
+
+def _is_direct_media_url(url: str) -> bool:
+    return bool(_DIRECT_MEDIA_EXT_RE.search(url))
+
+
+async def _get_shared_browser():
+    """惰性启动一个常驻的无头 Chromium，多次解析复用，避免每次都重新起进程。"""
+    global _playwright_ctx, _browser_instance, _browser_resolve_unavailable
+    if _browser_resolve_unavailable:
+        return None
+    async with _browser_lock:
+        if _browser_instance is not None:
+            return _browser_instance
+        if _browser_resolve_unavailable:
+            return None
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            print("[resolve] 未安装 playwright，跳过直链解析（可选功能，不影响其他功能）")
+            _browser_resolve_unavailable = True
+            return None
+        try:
+            _playwright_ctx = await async_playwright().start()
+            _browser_instance = await _playwright_ctx.chromium.launch(
+                args=["--no-sandbox", "--disable-dev-shm-usage"]
+            )
+            return _browser_instance
+        except Exception as e:
+            print(f"[resolve] 无头浏览器启动失败，跳过直链解析（可选功能，不影响其他功能）：{e}")
+            _browser_resolve_unavailable = True
+            if _playwright_ctx:
+                try:
+                    await _playwright_ctx.stop()
+                except Exception:
+                    pass
+            _playwright_ctx = None
+            _browser_instance = None
+            return None
+
+
+async def _resolve_direct_media_url(page_url: str, timeout: float = 15.0) -> Optional[str]:
+    """用无头浏览器打开播放页，从网络请求里嗅探真实媒体地址；解析不出来返回 None。"""
+    sem = _BROWSER_RESOLVE_SEMAPHORE
+    if sem is None:
+        return None
+    async with sem:
+        browser = await _get_shared_browser()
+        if not browser:
+            return None
+        found: dict = {}
+        context = None
+        try:
+            context = await browser.new_context(
+                user_agent=_DEFAULT_USER_AGENT,
+                ignore_https_errors=True,
+            )
+            page = await context.new_page()
+
+            def _on_request(req):
+                if found.get("strict"):
+                    return
+                u = req.url
+                if _STRICT_MEDIA_URL_RE.search(u):
+                    found["strict"] = u
+                elif "loose" not in found and _LOOSE_MEDIA_URL_RE.search(u):
+                    found["loose"] = u
+
+            page.on("request", _on_request)
+            try:
+                await page.goto(page_url, timeout=timeout * 1000, wait_until="domcontentloaded")
+            except Exception:
+                pass
+            # 给页面 JS 一点时间去请求真实地址；命中 m3u8/mpd 就提前结束，不用死等超时
+            deadline = asyncio.get_event_loop().time() + timeout
+            while asyncio.get_event_loop().time() < deadline and not found.get("strict"):
+                await asyncio.sleep(0.3)
+        except Exception as e:
+            print(f"[resolve] 解析播放页出错：{e}")
+        finally:
+            if context:
+                try:
+                    await context.close()
+                except Exception:
+                    pass
+        return found.get("strict") or found.get("loose")
+
+
+async def _shutdown_browser_resolver():
+    global _playwright_ctx, _browser_instance
+    if _browser_instance:
+        try:
+            await _browser_instance.close()
+        except Exception:
+            pass
+        _browser_instance = None
+    if _playwright_ctx:
+        try:
+            await _playwright_ctx.stop()
+        except Exception:
+            pass
+        _playwright_ctx = None
+
+
 def _verify_file(path: Path) -> tuple:
     """
     校验文件完整性。
@@ -434,6 +557,18 @@ async def run_download(task_id: str, url: str, output_name: str, media_type: str
 
 async def _run_download_core(task_id: str, url: str, output_name: str, media_type: str = "video"):
     task = tasks[task_id]
+
+    if task.status != "cancelled" and not _is_direct_media_url(url):
+        # 播放地址不像直链，大概率是个网页——下载工具拿到手只会是 HTML，
+        # 先尝试用无头浏览器解析出真实直链，解析失败就还是用原地址走老流程
+        # （大概率会失败，但至少行为跟以前一致，不会因为这一步引入新问题）。
+        task.log_lines.append("[解析] 播放地址疑似网页，尝试解析真实直链...")
+        real_url = await _resolve_direct_media_url(url)
+        if real_url:
+            task.log_lines.append(f"[解析] 已找到直链：{real_url[:160]}")
+            url = real_url
+        else:
+            task.log_lines.append("[解析] 未能解析出直链，仍用原地址尝试下载（大概率会失败）")
 
     while task.retries <= MAX_RETRIES:
         if task.status == "cancelled":
@@ -760,10 +895,17 @@ async def subscription_watcher():
 
 @app.on_event("startup")
 async def startup():
-    global _download_semaphore
+    global _download_semaphore, _BROWSER_RESOLVE_SEMAPHORE, _browser_lock
     load_data()
     _download_semaphore = asyncio.Semaphore(MAX_CONCURRENT_DOWNLOADS)
+    _browser_lock = asyncio.Lock()
+    _BROWSER_RESOLVE_SEMAPHORE = asyncio.Semaphore(1)  # 无头浏览器解析同时只跑一个，保护配置不高的 VPS
     asyncio.create_task(subscription_watcher())
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    await _shutdown_browser_resolver()
 
 
 # ─── 路由 ──────────────────────────────────────────────

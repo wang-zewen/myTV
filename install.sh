@@ -30,7 +30,13 @@ mkdir -p /tmp/m3u8dl
 
 echo -e "${YELLOW}[2/4] 安装 Python 依赖...${NC}"
 python3 -m venv "$INSTALL_DIR/venv"
-"$INSTALL_DIR/venv/bin/pip" install -q fastapi "uvicorn[standard]" python-multipart httpx yt-dlp
+"$INSTALL_DIR/venv/bin/pip" install -q fastapi "uvicorn[standard]" python-multipart httpx yt-dlp playwright
+
+# 无头浏览器解析非直链播放页是可选功能：这一步只下载 Chromium 本体（装到用户目录，
+# 不需要 root），失败（比如没联网）不影响其他功能，所以不让它中断整个安装。
+"$INSTALL_DIR/venv/bin/playwright" install chromium >/dev/null 2>&1 \
+  && echo -e "  ${GREEN}已安装无头浏览器（用于解析部分采集站的非直链播放源）${NC}" \
+  || echo -e "  ${YELLOW}无头浏览器安装失败，跳过（不影响其他功能，见下方说明）${NC}"
 
 echo -e "${YELLOW}[3/4] 更新程序文件...${NC}"
 cp "$SCRIPT_DIR/backend/main.py" "$INSTALL_DIR/main.py"
@@ -109,3 +115,6 @@ echo -e "${YELLOW}如有防火墙，请开放端口：ufw allow ${PORT}${NC}"
 if [ "$USE_SYSTEMD" = "true" ]; then
   echo -e "${YELLOW}开机自启（需 sudo）：sudo loginctl enable-linger ${USER}${NC}"
 fi
+echo -e "${YELLOW}部分采集站的播放源需要无头浏览器解析才能下载/播放直链，如果日志里看到"
+echo -e "[resolve] 无头浏览器启动失败，说明系统缺依赖库，需要 sudo 补装一次（可选，不装也不影响其他功能）：${NC}"
+echo -e "${YELLOW}  sudo ${INSTALL_DIR}/venv/bin/playwright install-deps chromium${NC}"
